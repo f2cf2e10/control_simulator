@@ -25,6 +25,43 @@ def cumulative_product(A, s, t):
         return result
 
 
+def full_sparsity(rows: int, cols: int):
+    r = np.repeat(np.arange(rows, dtype=int), cols)
+    c = np.tile(np.arange(cols, dtype=int), rows)
+    return r, c
+
+
+def block_diag_sparsity(num_blocks: int, block_rows: int, block_cols: int):
+    rows = []
+    cols = []
+    for b in range(num_blocks):
+        row_idx = np.repeat(np.arange(block_rows, dtype=int) + b * block_rows, block_cols)
+        col_idx = np.tile(np.arange(block_cols, dtype=int), block_rows) + b * block_cols
+        rows.append(row_idx)
+        cols.append(col_idx)
+    if not rows:
+        return np.array([], dtype=int), np.array([], dtype=int)
+    return np.concatenate(rows), np.concatenate(cols)
+
+
+def strict_upper_block_sparsity(num_blocks: int, block_rows: int, block_cols: int):
+    rows = []
+    cols = []
+    for t in range(num_blocks):
+        for s in range(t + 1, num_blocks):
+            row_idx = np.repeat(np.arange(block_rows, dtype=int) + t * block_rows, block_cols)
+            col_idx = np.tile(np.arange(block_cols, dtype=int), block_rows) + s * block_cols
+            rows.append(row_idx)
+            cols.append(col_idx)
+    if not rows:
+        return np.array([], dtype=int), np.array([], dtype=int)
+    return np.concatenate(rows), np.concatenate(cols)
+
+
+def has_nonzero_pattern(sparsity):
+    return sparsity[0].size > 0
+
+
 class LqgDro(Lqg):
     def __init__(
         self,
@@ -187,10 +224,16 @@ class LqgDro(Lqg):
         inv_cons = np.linalg.inv(R_block + H.T @ Q_block @ H)
 
         ### OPTIMIZATION MODEL ###
+        w_var_sparsity = block_diag_sparsity(N + 1, n, n)
+        v_var_sparsity = block_diag_sparsity(N, p, p)
+        m_var_sparsity = strict_upper_block_sparsity(N, m, p)
+        sep_w_sparsity = full_sparsity(n, n)
+        sep_v_sparsity = full_sparsity(p, p)
+
         E = cp.Variable((m * N, m * N), symmetric=True)
         E_x0 = cp.Variable((n, n), symmetric=True)
-        W_var = cp.Variable((n * (N + 1), n * (N + 1)))
-        V_var = cp.Variable((p * N, p * N))
+        W_var = cp.Variable((n * (N + 1), n * (N + 1)), sparsity=w_var_sparsity)
+        V_var = cp.Variable((p * N, p * N), sparsity=v_var_sparsity)
         E_w = []
         E_v = []
         W_var_sep = []  # cp.Variable((n*(T+1),n*(T+1)), symmetric=True)
@@ -198,53 +241,32 @@ class LqgDro(Lqg):
         for t in range(N):
             E_w.append(cp.Variable((n, n), symmetric=True))
             E_v.append(cp.Variable((p, p), symmetric=True))
-            W_var_sep.append(cp.Variable((n, n), symmetric=True))
-            V_var_sep.append(cp.Variable((p, p), symmetric=True))
-        W_var_sep.append(cp.Variable((n, n), symmetric=True))
-        M_var = cp.Variable((m * N, p * N))
-        M_var_sep = []
-        num_lower_tri = num_lower_triangular_elements(N, N)
-        for k in range(num_lower_tri):
-            M_var_sep.append(cp.Variable((m, p)))
-        k = 0
+            W_var_sep.append(cp.Variable((n, n), sparsity=sep_w_sparsity))
+            V_var_sep.append(cp.Variable((p, p), sparsity=sep_v_sparsity))
+        W_var_sep.append(cp.Variable((n, n), sparsity=sep_w_sparsity))
+        if has_nonzero_pattern(m_var_sparsity):
+            M_var = cp.Variable((m * N, p * N), sparsity=m_var_sparsity)
+        else:
+            M_var = cp.Constant(np.zeros((m * N, p * N)))
+
         cons = []
         for t in range(N):
             for s in range(t + 1):
-                cons.append(M_var[t * m: t * m + m, p *
-                            s: p * s + p] == M_var_sep[k])
-                cons.append(M_var_sep[k] == np.zeros((m, p)))
-                k = k + 1
+                cons.append(M_var[t * m: t * m + m, p * s: p * s + p] == 0)
 
         for t in range(N + 1):
             cons.append(W_var[n * t: n * t + n, n *
                         t: n * t + n] == W_var_sep[t])
+            cons.append(W_var_sep[t] == W_var_sep[t].T)
             cons.append(W_var_sep[t] >> 0)
-
-        # Setting the rest of the elements of the matrix to zero
-        for i in range(W_var.shape[0]):
-            for j in range(W_var.shape[1]):
-                # If the element is not in one of the blocks
-                if not any(
-                    n * t <= i < n * (t + 1) and n * t <= j < n * (t + 1)
-                    for t in range(N + 1)
-                ):
-                    cons.append(W_var[i, j] == 0)
 
         for t in range(N):
             cons.append(V_var[p * t: p * t + p, p *
                         t: p * t + p] == V_var_sep[t])
+            cons.append(V_var_sep[t] == V_var_sep[t].T)
             cons.append(V_var_sep[t] >> 0)
             cons.append(E_v[t] >> 0)
             cons.append(E_w[t] >> 0)
-        # Setting the rest of the elements of the matrix to zero
-        for i in range(V_var.shape[0]):
-            for j in range(V_var.shape[1]):
-                # If the element is not in one of the blocks
-                if not any(
-                    p * t <= i < p * (t + 1) and p * t <= j < p * (t + 1)
-                    for t in range(N + 1)
-                ):
-                    cons.append(V_var[i, j] == 0)
 
         cons.append(E >> 0)
         cons.append(E_x0 >> 0)

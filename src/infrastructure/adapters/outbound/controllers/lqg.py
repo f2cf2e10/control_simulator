@@ -159,7 +159,7 @@ class Lqg(Controller):
         L_list: List[Matrix] = [np.zeros((n, p)) for _ in range(N+1)]
         P_list[0] = self.P0.copy()
 
-        for k in range(N + 1):
+        for k in range(N):
             Ck = C_list[k]
             Gammak = Gamma_list[k]
             Pk = P_list[k]

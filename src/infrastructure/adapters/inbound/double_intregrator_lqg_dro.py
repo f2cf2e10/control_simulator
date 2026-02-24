@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -29,7 +31,7 @@ def main():
     x0_mean = np.array([[10.0],
                         [0.0]])
 
-    N = 50
+    N = 50 
     seed = 1
 
     # --- plant (true system) ---
@@ -64,7 +66,9 @@ def main():
 
     result = sim.execute()
     x, y, u = result.x, result.y, result.u
-
+    print(x)
+    print(y)
+    print(u)
     # --- plots ---
     plt.figure()
     plt.plot([yi[0, 0] for yi in y])
@@ -90,4 +94,6 @@ def main():
 
 
 if __name__ == "__main__":
+    t0 = time.time()
     main()
+    print(time.time() - t0)
