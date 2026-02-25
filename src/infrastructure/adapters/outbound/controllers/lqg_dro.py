@@ -25,6 +25,43 @@ def cumulative_product(A, s, t):
         return result
 
 
+def full_sparsity(rows: int, cols: int):
+    r = np.repeat(np.arange(rows, dtype=int), cols)
+    c = np.tile(np.arange(cols, dtype=int), rows)
+    return r, c
+
+
+def block_diag_sparsity(num_blocks: int, block_rows: int, block_cols: int):
+    rows = []
+    cols = []
+    for b in range(num_blocks):
+        row_idx = np.repeat(np.arange(block_rows, dtype=int) + b * block_rows, block_cols)
+        col_idx = np.tile(np.arange(block_cols, dtype=int), block_rows) + b * block_cols
+        rows.append(row_idx)
+        cols.append(col_idx)
+    if not rows:
+        return np.array([], dtype=int), np.array([], dtype=int)
+    return np.concatenate(rows), np.concatenate(cols)
+
+
+def strict_upper_block_sparsity(num_blocks: int, block_rows: int, block_cols: int):
+    rows = []
+    cols = []
+    for t in range(num_blocks):
+        for s in range(t + 1, num_blocks):
+            row_idx = np.repeat(np.arange(block_rows, dtype=int) + t * block_rows, block_cols)
+            col_idx = np.tile(np.arange(block_cols, dtype=int), block_rows) + s * block_cols
+            rows.append(row_idx)
+            cols.append(col_idx)
+    if not rows:
+        return np.array([], dtype=int), np.array([], dtype=int)
+    return np.concatenate(rows), np.concatenate(cols)
+
+
+def has_nonzero_pattern(sparsity):
+    return sparsity[0].size > 0
+
+
 class LqgDro(Lqg):
     def __init__(
         self,
@@ -37,7 +74,7 @@ class LqgDro(Lqg):
         Qn: Matrix,
         Sigma: Matrix,
         Gamma: Matrix,
-        xhat0: Matrix,
+        x0: Matrix,
         P0: Matrix,
         zeta: float,
         use_y0_update: bool = True
@@ -57,7 +94,7 @@ class LqgDro(Lqg):
         self.Gamma_list = MatrixOps.to_list(Gamma, self.N + 1, "Gamma")
 
         self.Qn = np.asarray(Qn, dtype=float)
-        self.xhat0 = MatrixOps.to_col(xhat0)
+        self.x0 = MatrixOps.to_col(x0)
         self.P0 = np.asarray(P0, dtype=float)
         self.zeta = zeta
         self.use_y0_update = bool(use_y0_update)
@@ -92,8 +129,7 @@ class LqgDro(Lqg):
         A_list, B_list, C_list = self.A_list, self.B_list, self.C_list
         Q_list, R_list = self.Q_list, self.R_list
         Sigma_dro_0, Sigma_dro_list, Gamma_dro_list = self._design_dro_noise()
-        print(Sigma_dro_list)
-        print(Gamma_dro_list)
+        
         n = int(A_list[0].shape[0])
         m = int(B_list[0].shape[1])
         p = int(C_list[0].shape[0])
@@ -141,6 +177,196 @@ class LqgDro(Lqg):
         return K_list, L_list, S_list, P_list, Sigma_dro_list, Gamma_dro_list
 
     def _design_dro_noise(self):
+        # Optimized version using sparse matrices 
+        # original naive source: https://github.com/RAO-EPFL/DR-Control/
+        A = self.A_list
+        B = self.B_list
+        R = self.R_list
+        C = self.C_list
+        Q = self.Q_list
+        zeta = self.zeta
+        xhat0 = self.P0
+        Gamma = self.Gamma_list
+        Sigma = self.Sigma_list
+        N = self.N
+        n = A[0].shape[0]
+        m = R[0].shape[0]
+        p = Gamma[0].shape[0]
+
+        #### Creating Block Matrices for SDP ####
+        R_block = np.zeros([N, N, m, m])
+        C_block = np.zeros([N, N + 1, p, n])
+        for t in range(N):
+            R_block[t, t] = R[t][:, :]
+            C_block[t, t] = C[t][:, :]
+        Q_block = np.zeros([n * (N + 1), n * (N + 1)])
+        for t in range(N):
+            Q_block[t * n: t * n + n, t * n: t * n + n] = Q[t][:, :]
+
+        R_block = np.reshape(R_block.transpose(0, 2, 1, 3), (m * N, m * N))
+        # Q_block = np.reshape(Q_block.transpose(0, 2, 1, 3), (n * (T + 1), n * (T + 1)))
+        C_block = np.reshape(C_block.transpose(
+            0, 2, 1, 3), (p * N, n * (N + 1)))
+
+        # initialize H and G as zero matrices
+        G = np.zeros((n * (N + 1), n * (N + 1)))
+        H = np.zeros((n * (N + 1), m * N))
+        for t in range(N + 1):
+            for s in range(t + 1):
+                # print(GG[t * n : t * n + n, s * n : s * n + n])
+                G[t * n: t * n + n, s * n: s * n +
+                    n] = cumulative_product(A, s, t)
+                if t != s:
+                    H[t * n: t * n + n, s * m: s * m + m] = (
+                        cumulative_product(A, s + 1, t) @ B[s][:, :]
+                    )
+        D = np.matmul(C_block, G)
+        inv_cons = np.linalg.inv(R_block + H.T @ Q_block @ H)
+
+        ### OPTIMIZATION MODEL ###
+        w_var_sparsity = block_diag_sparsity(N + 1, n, n)
+        v_var_sparsity = block_diag_sparsity(N, p, p)
+        m_var_sparsity = strict_upper_block_sparsity(N, m, p)
+        sep_w_sparsity = full_sparsity(n, n)
+        sep_v_sparsity = full_sparsity(p, p)
+
+        E = cp.Variable((m * N, m * N), symmetric=True)
+        E_x0 = cp.Variable((n, n), symmetric=True)
+        W_var = cp.Variable((n * (N + 1), n * (N + 1)), sparsity=w_var_sparsity)
+        V_var = cp.Variable((p * N, p * N), sparsity=v_var_sparsity)
+        E_w = []
+        E_v = []
+        W_var_sep = []  # cp.Variable((n*(T+1),n*(T+1)), symmetric=True)
+        V_var_sep = []  # cp.Variable((p*T, p*T), symmetric=True)
+        for t in range(N):
+            E_w.append(cp.Variable((n, n), symmetric=True))
+            E_v.append(cp.Variable((p, p), symmetric=True))
+            W_var_sep.append(cp.Variable((n, n), sparsity=sep_w_sparsity))
+            V_var_sep.append(cp.Variable((p, p), sparsity=sep_v_sparsity))
+        W_var_sep.append(cp.Variable((n, n), sparsity=sep_w_sparsity))
+        if has_nonzero_pattern(m_var_sparsity):
+            M_var = cp.Variable((m * N, p * N), sparsity=m_var_sparsity)
+        else:
+            M_var = cp.Constant(np.zeros((m * N, p * N)))
+
+        cons = []
+        for t in range(N):
+            for s in range(t + 1):
+                cons.append(M_var[t * m: t * m + m, p * s: p * s + p] == 0)
+
+        for t in range(N + 1):
+            cons.append(W_var[n * t: n * t + n, n *
+                        t: n * t + n] == W_var_sep[t])
+            cons.append(W_var_sep[t] == W_var_sep[t].T)
+            cons.append(W_var_sep[t] >> 0)
+
+        for t in range(N):
+            cons.append(V_var[p * t: p * t + p, p *
+                        t: p * t + p] == V_var_sep[t])
+            cons.append(V_var_sep[t] == V_var_sep[t].T)
+            cons.append(V_var_sep[t] >> 0)
+            cons.append(E_v[t] >> 0)
+            cons.append(E_w[t] >> 0)
+
+        cons.append(E >> 0)
+        cons.append(E_x0 >> 0)
+
+        cons.append(cp.trace(W_var_sep[0] + xhat0 - 2 * E_x0) <= zeta**2)
+        cons.append(W_var_sep[0] >> np.min(
+            np.linalg.eigvals(xhat0)) * np.eye(n))
+        for t in range(N):
+            cons.append(
+                cp.trace(W_var_sep[t + 1] +
+                         Sigma[t][:, :] - 2 * E_w[t]) <= zeta**2
+            )
+            cons.append(
+                cp.trace(V_var_sep[t] + Gamma[t][:, :] - 2 * E_v[t]) <= zeta**2)
+            cons.append(
+                W_var_sep[t +
+                          1] >> np.min(np.linalg.eigvals(Sigma[t][:, :])) * np.eye(n)
+            )
+            cons.append(
+                V_var_sep[t] >> np.min(
+                    np.linalg.eigvals(Gamma[t][:, :])) * np.eye(p)
+            )
+        X0_hat_sqrt = sqrtm(xhat0)
+        cons.append(
+            cp.bmat(
+                [
+                    [cp.matmul(cp.matmul(X0_hat_sqrt, W_var_sep[0]),
+                               X0_hat_sqrt), E_x0],
+                    [E_x0, np.eye(n)],
+                ]
+            )
+            >> 0
+        )
+        for t in range(N):
+            temp = sqrtm(Sigma[t][:, :])
+            cons.append(
+                cp.bmat(
+                    [
+                        [cp.matmul(
+                            cp.matmul(temp, W_var_sep[t + 1]), temp), E_w[t]],
+                        [E_w[t], np.eye(n)],
+                    ]
+                )
+                >> 0
+            )
+            temp = sqrtm(Gamma[t][:, :])
+            cons.append(
+                cp.bmat(
+                    [
+                        [cp.matmul(cp.matmul(temp, V_var_sep[t]), temp), E_v[t]],
+                        [E_v[t], np.eye(p)],
+                    ]
+                )
+                >> 0
+            )
+
+        cons.append(
+            cp.bmat(
+                [
+                    [
+                        E,
+                        cp.matmul(
+                            cp.matmul(
+                                cp.matmul(cp.matmul(H.T, Q_block), G), W_var), D.T
+                        )
+                        + M_var / 2,
+                    ],
+                    [
+                        (
+                            cp.matmul(
+                                cp.matmul(
+                                    cp.matmul(cp.matmul(H.T, Q_block), G), W_var),
+                                D.T,
+                            )
+                            + M_var / 2
+                        ).T,
+                        cp.matmul(cp.matmul(D, W_var), D.T) + V_var,
+                    ],
+                ]
+            )
+            >> 0
+        )
+        obj = -cp.trace(cp.matmul(E, inv_cons)) + cp.trace(
+            cp.matmul(cp.matmul(cp.matmul(G.T, Q_block), G), W_var)
+        )
+
+        prob = cp.Problem(cp.Maximize(obj), cons)
+        prob.solve(
+            solver=cp.CLARABEL,
+            warm_start=True,
+            verbose=True,
+        )
+        
+        W_list = [W_var.value[i*n:(i+1)*n, i*n:(i+1)*n] for i in range(N+1)]
+        V_list = [V_var.value[i*p:(i+1)*p, i*p:(i+1)*p] for i in range(N)]
+
+        return W_list[0], W_list[1:], V_list
+
+
+    def _design_dro_noise_with_dense_matrices(self):
         # Code from https://github.com/RAO-EPFL/DR-Control/
         A = self.A_list
         B = self.B_list
@@ -148,7 +374,7 @@ class LqgDro(Lqg):
         C = self.C_list
         Q = self.Q_list
         zeta = self.zeta
-        xhat0 = self.xhat0
+        xhat0 = self.P0
         Gamma = self.Gamma_list
         Sigma = self.Sigma_list
         N = self.N

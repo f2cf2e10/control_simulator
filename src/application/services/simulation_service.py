@@ -3,16 +3,18 @@ from __future__ import annotations
 from typing import List
 import numpy as np
 
-from src.application.ports.inbound.simulation_usecase import SimulationUseCase, SimulationResult
+from src.application.ports.outbound.cost import Cost
+from src.application.ports.inbound.simulation_usecase import SimulationUseCase
 from src.application.ports.outbound.controller import Controller
 from src.application.ports.outbound.plant import Plant
-from src.domain.type import Matrix
+from src.domain.type import Matrix, SimulationResult
 
 
 class SimulationService(SimulationUseCase):
-    def __init__(self, plant: Plant, controller: Controller, N: int, x0: Matrix):
+    def __init__(self, plant: Plant, controller: Controller, cost: Cost, N: int, x0: Matrix):
         self.plant = plant
         self.controller = controller
+        self.cost = cost
         self.N = int(N)
         self.x0 = np.asarray(x0, dtype=float)
 
@@ -39,4 +41,5 @@ class SimulationService(SimulationUseCase):
             y_next = self.plant.measure(x_next)
             y.append(y_next)
 
-        return SimulationResult(x=x, y=y, u=u)
+        cost = self.cost(x, u)
+        return SimulationResult(x=x, y=y, u=u, cost=cost)

@@ -1,6 +1,6 @@
 import numpy as np
 
-from typing import List
+from typing import List, Sequence
 from src.domain.type import Matrix, MatrixOrSeq
 
 
@@ -24,4 +24,5 @@ class MatrixOps:
             raise ValueError(
                 f"{name} must have length {length}, got {len(mats_seq)}")
         return [np.asarray(M, dtype=float) for M in mats_seq]
+
 

@@ -35,7 +35,7 @@ class Lqg(Controller):
         Qn: Matrix,
         Sigma: MatrixOrSeq,
         Gamma: MatrixOrSeq,
-        xhat0: Matrix,
+        x0: Matrix,
         P0: Matrix,
         use_y0_update: bool = True,
     ):
@@ -54,7 +54,7 @@ class Lqg(Controller):
         self.Gamma_list = MatrixOps.to_list(Gamma, self.N + 1, "Gamma")
 
         self.Qn = np.asarray(Qn, dtype=float)
-        self.xhat0 = MatrixOps.to_col(xhat0)
+        self.x0 = MatrixOps.to_col(x0)
         self.P0 = np.asarray(P0, dtype=float)
         self.use_y0_update = bool(use_y0_update)
 
@@ -82,16 +82,17 @@ class Lqg(Controller):
     # ---------------- ControllerPort API ----------------
 
     def initialize(self) -> None:
-        self._xhat = self.xhat0.copy()
+        self._xhat = self.x0.copy()
         self._k = 0
         self._u_prev = None
+        self.cost = 0
 
     def compute(self, y_k: Matrix) -> Matrix:
         if self._xhat is None:
             raise RuntimeError(
                 "Controller not initialized. Call initialize() first.")
         if not (0 <= self._k < self.N):
-            raise ValueError(f"k must be in [0, {self.N-1}], got {k}")
+            raise ValueError(f"k must be in [0, {self.N-1}], got {self._k}")
 
         y_k = MatrixOps.to_col(y_k)
 

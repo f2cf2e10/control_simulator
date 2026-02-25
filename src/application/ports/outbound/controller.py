@@ -15,4 +15,3 @@ class Controller(ABC):
     def compute(self, y_k: Matrix) -> Matrix:
         """Return control input u_k given measurement y_k."""
         ...
-
