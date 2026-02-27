@@ -13,7 +13,7 @@ from src.infrastructure.adapters.outbound.utils import MatrixOps
 from src.infrastructure.adapters.outbound.controllers.nominal_mpc import NominalMpc
 
 
-class TightenedSMpc(NominalMpc):
+class TightenedSmpc(NominalMpc):
     """
     Linear MPC (sparse QP), offline matrices + single online parameter (x0).
 
