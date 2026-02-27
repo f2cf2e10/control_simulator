@@ -6,7 +6,7 @@ from src.infrastructure.adapters.outbound.cost import Quadratic
 from src.application.services.simulation_service import SimulationService
 from src.infrastructure.adapters.outbound.plants.linear_plant import LinearPlant
 from src.infrastructure.adapters.outbound.controllers.lqg import Lqg
-from src.infrastructure.adapters.outbound.noise_samplers import gaussian_noise
+from src.infrastructure.adapters.outbound.noise_samplers import GaussianNoise
 from src.infrastructure.adapters.inbound.params import experiment1
 
 
@@ -37,8 +37,8 @@ def main():
         A=A, B=B, C=C,
         N=N,
         Sigma=SigmaPlant, Gamma=GammaPlant,
-        process_noise_sampler=gaussian_noise,
-        measurement_noise_sampler=gaussian_noise,
+        process_noise_sampler=GaussianNoise(),
+        measurement_noise_sampler=GaussianNoise(),
         seed=seed,
     )
     dzeta = zeta/(N*d + N)

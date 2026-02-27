@@ -1,11 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from src.infrastructure.adapters.outbound.controllers.nominal_mpc_sparse import NominalMpc
+from src.infrastructure.adapters.outbound.controllers.nominal_mpc import NominalMpc
 from src.application.services.simulation_service import SimulationService
 from src.infrastructure.adapters.outbound.plants.linear_plant import LinearPlant
 from src.infrastructure.adapters.outbound.controllers.lqg import Lqg
-from src.infrastructure.adapters.outbound.noise_samplers import gaussian_noise, zero_noise
+from src.infrastructure.adapters.outbound.noise_samplers import GaussianNoise, ZeroNoise
 
 
 def main():
@@ -33,8 +33,8 @@ def main():
         A=A, B=B, C=C,
         N=N,
         Sigma=None, Gamma=None,
-        process_noise_sampler=zero_noise,
-        measurement_noise_sampler=zero_noise,
+        process_noise_sampler=ZeroNoise(),
+        measurement_noise_sampler=ZeroNoise(),
         seed=seed,
     )
 

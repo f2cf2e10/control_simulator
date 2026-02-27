@@ -5,7 +5,7 @@ import numpy as np
 
 from src.domain.type import Matrix, MatrixOrSeq
 from src.application.ports.outbound.plant import Plant
-from src.infrastructure.adapters.outbound.noise_samplers import gaussian_noise
+from src.infrastructure.adapters.outbound.noise_samplers import GaussianNoise
 from src.infrastructure.adapters.outbound.utils import MatrixOps
 
 NoiseSampler = Callable[[int, Matrix, np.random.Generator], Matrix]
@@ -30,8 +30,8 @@ class LinearPlant(Plant):
         N: int,
         Sigma: Optional[MatrixOrSeq] = None,
         Gamma: Optional[MatrixOrSeq] = None,
-        process_noise_sampler:  NoiseSampler = gaussian_noise,
-        measurement_noise_sampler: NoiseSampler = gaussian_noise,
+        process_noise_sampler:  NoiseSampler = GaussianNoise(),
+        measurement_noise_sampler: NoiseSampler = GaussianNoise(),
         seed: Optional[int] = None
     ):
         self.N = int(N)
