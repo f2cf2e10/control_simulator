@@ -1,4 +1,3 @@
-from infrastructure.adapters.outbound.cost import Quadratic
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -6,9 +5,9 @@ from src.infrastructure.adapters.outbound.controllers.nominal_mpc import Nominal
 from src.application.services.simulation_service import SimulationService
 from src.infrastructure.adapters.outbound.plants.linear_plant import LinearPlant
 from src.infrastructure.adapters.outbound.controllers.lqg import Lqg
-from src.infrastructure.adapters.outbound.noise_samplers import zero_noise
+from src.infrastructure.adapters.outbound.noise_samplers import UniformNoise, ZeroNoise
 from src.infrastructure.adapters.outbound.cost import Quadratic
-from src.infrastructure.adapters.inbound.params import plant1
+from src.infrastructure.adapters.outbound.controllers.tightened_smpc import TightenedSmpc
 
 
 def main():
@@ -37,32 +36,36 @@ def main():
     wmax = 0.01
     wmin = -0.01
     Ccbf1 = np.array([[5./9], [1.], [0], [0]])
-    bcbf1 = np.arrauy([[0.5/9]])
+    bcbf1 = np.array([[0.5/9]])
     Ccbf2 = np.array([[1.], [-1.], [0], [0]])
     bcbf2 = np.arrauy([[1.6]])
     epsilon = 0.05
     N = 300
     vmax = np.array([[5.], [2.]])
-    Sigma = plant1["Sigma"]
-    Gamma = plant1["Gamma"]
-    x0_cov = plant1["x0_cov"]
-    x0_mean = plant1["x0_mean"]
+    umin = -5
+    umax = 5
+    Sigma = 1/12 * (2*wmax)**2 * np.eye(m)
+    x0 = np.array([[-0.8], [0.6], [-0.45], [0.65]])
 
     # --- plant (true system) ---
     plant = LinearPlant(
         A=A, B=B, C=C,
         N=N,
-        Sigma=None, Gamma=None,
-        process_noise_sampler=zero_noise,
-        measurement_noise_sampler=zero_noise,
+        Sigma=Sigma, Gamma=None,
+        process_noise_sampler=UniformNoise(wmin, wmax),
+        measurement_noise_sampler=ZeroNoise(),
         seed=seed,
     )
 
     # --- controller (MPC) ---
-    mpc = NominalMpc(N=N, A=A, B=B, Q=Q, R=R)
+    mpc = TightenedSmpc(N=N, A=A, B=B, G=G, Q=Q, R=R, K=K,
+                        Sigma=Sigma, Ccbf1=Ccbf1, bcbf1=bcbf1,
+                        Ccbf2=Ccbf2, bcbf2=bcbf2, gamma=gamma,
+                        epsilon=epsilon, umin=umin, umax=umax,
+                        wmin=wmin, wmax=wmax, vmax=vmax)
 
     # --- Quadratic Cost ---
-    qc = Quadratic(N, Q, R, Qn)
+    qc = Quadratic(N, Q, R, Q)
 
     # --- application service (owns the path) ---
     sim = SimulationService(
@@ -70,7 +73,7 @@ def main():
         controller=mpc,
         cost=qc,
         N=N,
-        x0=x0_mean,
+        x0=x0,
     )
 
     result = sim.execute()
