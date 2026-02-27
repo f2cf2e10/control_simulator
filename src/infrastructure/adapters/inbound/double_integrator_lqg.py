@@ -61,21 +61,23 @@ def main():
     Npaths = 1000
     cost = []
     x = []
-    y = []
     u = []
     for _ in range(Npaths):
         result = sim.execute()
-        x.append(result.x)
-        y.append(result.y)
+        x.append(result.x[N])
         u.append(result.u)
         cost.append(result.cost)
     df = pd.DataFrame(cost)
     print(df.describe())
     df.to_csv(f"{figs_dir}/cost.csv")
+    df = pd.DataFrame([i[0] for i in x])
+    df = pd.concat([df,  pd.DataFrame([i[1] for i in x])], axis=1)
+    print(df.describe())
+    df.to_csv(f"{figs_dir}/state.csv")
 
     # --- plots ---
     plt.figure()
-    plt.boxplot([[xi[N][0][0] for xi in x], [xi[N][1][0] for xi in x]])
+    plt.boxplot([[xi[0][0] for xi in x], [xi[1][0] for xi in x]])
     plt.xticks([1, 2], ["x[0]", "x[1]"])  # Label the boxes
     plt.title("x")
     plt.savefig(f"{figs_dir}/x.png")
