@@ -12,13 +12,13 @@ class NoiseSampler(ABC):
         ...
 
 
-def ZeroNoise(NoiseSampler):
+class ZeroNoise(NoiseSampler):
     def __call__(self, cov: Matrix, rng: np.random.Generator) -> Matrix:
         dim = int(np.asarray(cov).shape[0])
         return np.zeros((dim, 1), dtype=float)
 
 
-def GaussianNoise(NoiseSampler):
+class GaussianNoise(NoiseSampler):
 
     def __call__(self, cov: Matrix, rng: np.random.Generator) -> Matrix:
         cov = np.asarray(cov, dtype=float)
@@ -28,7 +28,7 @@ def GaussianNoise(NoiseSampler):
         return np.linalg.cholesky(cov) @ rng.standard_normal((dim, 1))
 
 
-def UniformNoise(NoiseSampler):
+class UniformNoise(NoiseSampler):
 
     def __init__(self, a: float, b: float):
         self.a = a
