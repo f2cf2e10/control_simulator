@@ -10,7 +10,7 @@ import polytope as pc
 
 from src.domain.type import Matrix, MatrixOrSeq
 from src.infrastructure.adapters.outbound.utils import MatrixOps
-from src.infrastructure.adapters.outbound.controllers.nominal_mpc_sparse import NominalMpc
+from src.infrastructure.adapters.outbound.controllers.nominal_mpc import NominalMpc
 
 
 class TightenedSMpc(NominalMpc):

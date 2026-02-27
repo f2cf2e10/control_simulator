@@ -2,11 +2,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from src.infrastructure.adapters.outbound.cost import Quadratic
 from src.application.services.simulation_service import SimulationService
 from src.infrastructure.adapters.outbound.plants.linear_plant import LinearPlant
 from src.infrastructure.adapters.outbound.controllers.lqg import Lqg
 from src.infrastructure.adapters.outbound.noise_samplers import gaussian_noise
+from src.infrastructure.adapters.outbound.cost import Quadratic
 from src.infrastructure.adapters.inbound.params import plant1
 
 

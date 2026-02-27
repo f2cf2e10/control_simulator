@@ -1,27 +1,28 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from src.infrastructure.adapters.outbound.cost import Quadratic
 from src.application.services.simulation_service import SimulationService
 from src.infrastructure.adapters.outbound.plants.linear_plant import LinearPlant
 from src.infrastructure.adapters.outbound.controllers.lqg import Lqg
 from src.infrastructure.adapters.outbound.noise_samplers import gaussian_noise
+from src.infrastructure.adapters.outbound.cost import Quadratic
 from src.infrastructure.adapters.inbound.params import plant1
+
 
 def main():
     seed = 1
     figs_dir = "simulations/figs/lqg/double_integrator"
 
-    A = plant1["A"] 
-    B = plant1["B"] 
-    C = plant1["C"] 
-    Q = plant1["Q"] 
-    R = plant1["R"] 
-    Qn = plant1["Qn"] 
-    Sigma = plant1["Sigma"] 
-    Gamma = plant1["Gamma"] 
-    x0_cov = plant1["x0_cov"] 
-    x0_mean = plant1["x0_mean"] 
+    A = plant1["A"]
+    B = plant1["B"]
+    C = plant1["C"]
+    Q = plant1["Q"]
+    R = plant1["R"]
+    Qn = plant1["Qn"]
+    Sigma = plant1["Sigma"]
+    Gamma = plant1["Gamma"]
+    x0_cov = plant1["x0_cov"]
+    x0_mean = plant1["x0_mean"]
 
     N = 50
 
