@@ -1,30 +1,32 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from src.infrastructure.adapters.outbound.controllers.nominal_mpc import NominalMpc
+from src.infrastructure.adapters.outbound.controllers.nominal_mpc_sparse import NominalMpc
 from src.application.services.simulation_service import SimulationService
 from src.infrastructure.adapters.outbound.plants.linear_plant import LinearPlant
-from src.infrastructure.adapters.outbound.noise_samplers import zero_noise
-from src.infrastructure.adapters.outbound.cost import Quadratic
-from src.infrastructure.adapters.inbound.params import plant1
+from src.infrastructure.adapters.outbound.controllers.lqg import Lqg
+from src.infrastructure.adapters.outbound.noise_samplers import gaussian_noise, zero_noise
 
 
 def main():
-    seed = 1
     figs_dir = "simulations/figs/mpc/double_integrator"
 
-    A = plant1["A"]
-    B = plant1["B"]
-    C = plant1["C"]
-    Q = plant1["Q"]
-    R = plant1["R"]
-    Qn = plant1["Qn"]
-    Sigma = plant1["Sigma"]
-    Gamma = plant1["Gamma"]
-    x0_cov = plant1["x0_cov"]
-    x0_mean = plant1["x0_mean"]
+    dt = 0.1
+    A = np.array([[1.0, dt],
+                  [0.0, 1.0]])
+    B = np.array([[0.5 * dt * dt],
+                  [dt]])
+    C = np.eye(A.shape[0], A.shape[1])      # measure position only
+
+    Q = np.diag([10.0, 1.0])
+    R = np.array([[0.1]])
+    Qn = np.diag([50.0, 5.0])
+
+    x0 = np.array([[10.0],
+                   [0.0]])
 
     N = 50
+    seed = 1
 
     # --- plant (true system) ---
     plant = LinearPlant(
@@ -39,16 +41,12 @@ def main():
     # --- controller (MPC) ---
     mpc = NominalMpc(N=N, A=A, B=B, Q=Q, R=R)
 
-    # --- Quadratic Cost ---
-    qc = Quadratic(N, Q, R, Qn)
-
-    # --- application service (owns the path) ---
+    # --- application service (owns the loop) ---
     sim = SimulationService(
         plant=plant,
         controller=mpc,
-        cost=qc,
         N=N,
-        x0=x0_mean,
+        x0=x0,
     )
 
     result = sim.execute()

@@ -4,28 +4,31 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from src.infrastructure.adapters.outbound.cost import Quadratic
 from src.application.services.simulation_service import SimulationService
 from src.infrastructure.adapters.outbound.plants.linear_plant import LinearPlant
 from src.infrastructure.adapters.outbound.controllers.lqg_dro import LqgDro
 from src.infrastructure.adapters.outbound.noise_samplers import gaussian_noise
-from src.infrastructure.adapters.outbound.cost import Quadratic
-from src.infrastructure.adapters.inbound.params import plant1
+from src.infrastructure.adapters.inbound.params import experiment1
 
 
 def main():
     figs_dir = "simulations/figs/lqg_dro/double_integrator"
     seed = 1
 
-    A = plant1["A"] 
-    B = plant1["B"] 
-    C = plant1["C"] 
-    Q = plant1["Q"] 
-    R = plant1["R"] 
-    Qn = plant1["Qn"] 
-    Sigma = plant1["Sigma"] 
-    Gamma = plant1["Gamma"] 
-    x0_cov = plant1["x0_cov"] 
-    x0_mean = plant1["x0_mean"] 
+    A = experiment1["A"] 
+    B = experiment1["B"] 
+    C = experiment1["C"] 
+    Q = experiment1["Q"] 
+    R = experiment1["R"] 
+    Qn = experiment1["Qn"] 
+    SigmaPlant = experiment1["SigmaPlant"] 
+    GammaPlant = experiment1["GammaPlant"] 
+    SigmaController =experiment1["SigmaController"]  
+    GammaController = experiment1["GammaController"]
+    x0_cov = experiment1["x0_cov"] 
+    x0_mean = experiment1["x0_mean"] 
+
 
     N = 50
     zeta = 1.0
@@ -34,7 +37,7 @@ def main():
     plant = LinearPlant(
         A=A, B=B, C=C,
         N=N,
-        Sigma=Sigma, Gamma=Gamma,
+        Sigma=SigmaPlant, Gamma=GammaPlant,
         process_noise_sampler=gaussian_noise,
         measurement_noise_sampler=gaussian_noise,
         seed=seed,
@@ -45,7 +48,7 @@ def main():
         N=N,
         A=A, B=B, C=C,
         Q=Q, R=R, Qn=Qn,
-        Sigma=Sigma, Gamma=Gamma,
+        Sigma=SigmaController, Gamma=GammaController,
         x0=x0_mean,
         P0=x0_cov,
         zeta=zeta,
