@@ -30,6 +30,7 @@ class TightenedSmpc(NominalMpc):
     def __init__(
         self,
         N: int,
+        N_tilde: int,
         A: Matrix,
         B: Matrix,
         G: Matrix,
@@ -52,6 +53,7 @@ class TightenedSmpc(NominalMpc):
         self.N = int(N)
         if self.N <= 0:
             raise ValueError("N must be a positive integer")
+        self.N_tilde = int(N_tilde)
 
         # Convert to per-step lists (length N)
         A_list = MatrixOps.to_list(A, self.N, "A")
@@ -95,7 +97,7 @@ class TightenedSmpc(NominalMpc):
         cons += self._build_chance_constraint((1-gamma)
                                               * Ccbf, -Ccbf, gamma * bcbf, prob, epsilon)
         # P{| vx_i | + | vy_i | <= vmax | x_{i-1} } >= 1-epsilon
-        mid = n / 2
+        mid = n // 2
         L1 = np.zeros((4, n))
         L1[0, [mid, mid + 1]] = [-1, -1]
         L1[1, [mid, mid + 1]] = [-1, 1]
@@ -112,21 +114,35 @@ class TightenedSmpc(NominalMpc):
         # ---------------------------
         # Input constraint tightening
         # ---------------------------
-        U = pc.box2poly(np.array([[umin, umax]]*self.m))
-        W = pc.box2poly(np.array([[wmin, wmax]]*self.m))
+        nx = self.N * self.n
+        U = pc.box2poly(np.array([[umin, umax]] * self.m))
+        W = pc.box2poly(np.array([[wmin, wmax]] * G.shape[1]))
         V_list = [U]
-        GW = G@W
-        E = pc.Polytope(GW, np.zeros(self.m))
+        def matrix_times_polytope(A, P):
+            if pc.is_empty(P):
+                return P
+            AP = (A @ pc.extreme(P).T).T
+            all_zeros = (AP==0).all(1)
+            AP = np.delete(AP, all_zeros, axis =1)
+            AP = pc.qhull(AP)
+            return AP
+
+        GW = matrix_times_polytope(G, W) 
+        E = GW
         for i in range(1, self.N):
-            KE = pc.qhull((K @ pc.extreme(E).T).T)
+            KE = matrix_times_polytope(K, E)
             V_list.append(U.diff(KE))
-            AE = pc.qhull((A_list[i] @ pc.extreme(E).T).T)
+            AE = matrix_times_polytope(A_list[i], E)
             E = AE.union(GW)
 
-        zero_blocks = [sp.csc_matrix(self.m)] * self.N
-        V = sp.block_diag(zero_blocks + [V.A for V in V_list], format="csc")
-        v_bound = np.hstack([V.b for V in V_list])
-        return [V @ self.z <= v_bound]
+        # Stack tightened per-step input constraints on [u0..u_{N-1}]
+        Au = sp.block_diag([Vi.A for Vi in V_list], format="csc")
+        bu = np.vstack([Vi.b for Vi in V_list]).reshape(-1)
+
+        # Embed into full decision vector z = [x1..xN, u0..u_{N-1}]
+        Zu = sp.csc_matrix((Au.shape[0], nx))
+        Gu = sp.hstack([Zu, Au], format="csc")
+        return [Gu @ self.z <= bu]
 
     def _build_chance_constraint(self, Cprev, Ccurr, b, quantile, epsilon):
         # ---------------------------
@@ -136,19 +152,20 @@ class TightenedSmpc(NominalMpc):
         n = self.n
         m = self.m
         nx = self.N * n
-        nz = nx + self.N * m
+        N = self.N - self.N_tilde
+        nz = nx + N * m
 
         d = Cprev.shape[0]
-        M = sp.lil_matrix(((self.N - 1) * d, nz))
+        M = sp.lil_matrix(((N - 1) * d, nz))
 
-        for i in range(1, self.N):
+        for i in range(1, N):
             r = (i - 1) * d
             M[r:r+d, (i - 1) * n:i * n] = Cprev
             M[r:r+d, i * n:(i + 1) * n] = Ccurr
 
         M = M.tocsc()
-        rhs = np.zeros(d * (self.N - 1))
-        for i in range(1, self.N):
+        rhs = np.zeros(d * (N - 1))
+        for i in range(1, N):
             q = quantile(i).ppf(1.0 - epsilon)
             # reshape because we use a column vector
             rhs[d*(i-1):d*i] = (b - q).reshape(-1)

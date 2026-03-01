@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.signal import place_poles
 
 from src.infrastructure.adapters.outbound.controllers.nominal_mpc import NominalMpc
 from src.application.services.simulation_service import SimulationService
@@ -38,41 +39,45 @@ def main():
     Ccbf1 = np.array([[5./9], [1.], [0], [0]])
     bcbf1 = np.array([[0.5/9]])
     Ccbf2 = np.array([[1.], [-1.], [0], [0]])
-    bcbf2 = np.arrauy([[1.6]])
+    bcbf2 = np.array([[1.6]])
     epsilon = 0.05
-    N = 300
+    N = 7 
+    N_tilde = 2
+    T = 300
     vmax = np.array([[5.], [2.]])
     umin = -5
     umax = 5
     Sigma = 1/12 * (2*wmax)**2 * np.eye(m)
     x0 = np.array([[-0.8], [0.6], [-0.45], [0.65]])
+    poles = np.array([0.3, 0.4, 0.25, 0.35])
+    K = place_poles(A, B, poles)
+    K = K.gain_matrix
 
     # --- plant (true system) ---
     plant = LinearPlant(
-        A=A, B=B, C=C,
-        N=N,
-        Sigma=Sigma, Gamma=None,
+        A=A, B=B, C=C, N=T,
+        Sigma=Sigma, Gamma=None, G =G,
         process_noise_sampler=UniformNoise(wmin, wmax),
         measurement_noise_sampler=ZeroNoise(),
         seed=seed,
     )
 
     # --- controller (MPC) ---
-    mpc = TightenedSmpc(N=N, A=A, B=B, G=G, Q=Q, R=R, K=K,
-                        Sigma=Sigma, Ccbf1=Ccbf1, bcbf1=bcbf1,
-                        Ccbf2=Ccbf2, bcbf2=bcbf2, gamma=gamma,
-                        epsilon=epsilon, umin=umin, umax=umax,
-                        wmin=wmin, wmax=wmax, vmax=vmax)
+    mpc = TightenedSmpc(N=N, N_tilde=N_tilde, A=A, B=B, G=G, 
+                        Q=Q, R=R, K=K, Sigma=Sigma, Ccbf1=Ccbf1, 
+                        bcbf1=bcbf1, Ccbf2=Ccbf2, bcbf2=bcbf2, 
+                        gamma=gamma, epsilon=epsilon, umin=umin, 
+                        umax=umax, wmin=wmin, wmax=wmax, vmax=vmax)
 
     # --- Quadratic Cost ---
-    qc = Quadratic(N, Q, R, Q)
+    qc = Quadratic(T, Q, R, Q)
 
     # --- application service (owns the path) ---
     sim = SimulationService(
         plant=plant,
         controller=mpc,
         cost=qc,
-        N=N,
+        N=T,
         x0=x0,
     )
 
