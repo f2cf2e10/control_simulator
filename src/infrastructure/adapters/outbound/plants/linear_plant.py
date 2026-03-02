@@ -30,6 +30,7 @@ class LinearPlant(Plant):
         N: int,
         Sigma: Optional[MatrixOrSeq] = None,
         Gamma: Optional[MatrixOrSeq] = None,
+        G: Optional[MatrixOrSeq] = None,
         process_noise_sampler:  NoiseSampler = GaussianNoise(),
         measurement_noise_sampler: NoiseSampler = GaussianNoise(),
         seed: Optional[int] = None
@@ -56,10 +57,18 @@ class LinearPlant(Plant):
 
         self.Sigma_list: Optional[List[Matrix]] = None
         if Sigma is not None:
-            self.Sigma_list = MatrixOps.to_list(Sigma, self.N, "Sigma")
-            S0 = self.Sigma_list[0]
-            if S0.shape != (n, n):
-                raise ValueError(f"Sigma[0] must be (n,n), got {S0.shape}")
+            if G is not None:
+                S = G @ Sigma @ G.T
+                if S.shape != (n, n):
+                    raise ValueError(f"G*Sigma must be (n,n), got {S.shape}")
+                Sigma_list = MatrixOps.to_list(Sigma, self.N, "Sigma")
+                G_list = MatrixOps.to_list(G, self.N, "G")
+                self.Sigma_list = [G_list[i] @ Sigma_list[i] @
+                               G_list[i].T for i in range(len(Sigma_list))]
+            else:
+                if Sigma.shape != (n, n):
+                    raise ValueError(f"Sigma must be (n,n), got {S.shape}")
+                self.Sigma_list = MatrixOps.to_list(Sigma, self.N, "Sigma") 
 
         self.Gamma_list: Optional[List[Matrix]] = None
         if Gamma is not None:
@@ -67,7 +76,7 @@ class LinearPlant(Plant):
             G0 = self.Gamma_list[0]
             if G0.shape != (p, p):
                 raise ValueError(f"Gamma[0] must be (p,p), got {G0.shape}")
-        
+
         self._rng = np.random.default_rng(seed)
         self._process_noise_sampler = process_noise_sampler
         self._measurement_noise_sampler = measurement_noise_sampler
@@ -93,7 +102,9 @@ class LinearPlant(Plant):
         Ck = self.C_list[self._k]
         y = Ck @ x_k
         if self.Gamma_list is not None:
-            y = y + self._measurement_noise_sampler(self.Gamma_list[self._k], self._rng)
+            y = y + \
+                self._measurement_noise_sampler(
+                    self.Gamma_list[self._k], self._rng)
         return y
 
     def propagate(self, x_k: Matrix, u_k: Matrix) -> Matrix:
@@ -103,6 +114,8 @@ class LinearPlant(Plant):
         Bk = self.B_list[self._k]
         x_next = Ak @ x_k + Bk @ u_k
         if self.Sigma_list is not None:
-            x_next = x_next + self._process_noise_sampler(self.Sigma_list[self._k], self._rng)
+            x_next = x_next + \
+                self._process_noise_sampler(
+                    self.Sigma_list[self._k], self._rng)
         self._k += 1
         return x_next

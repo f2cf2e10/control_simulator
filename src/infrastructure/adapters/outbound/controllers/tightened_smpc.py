@@ -150,22 +150,25 @@ class TightenedSmpc(NominalMpc):
         # ---------------------------
         # AND velocity L1 constraints on states (3, 4), for i = 1..p:
         n = self.n
-        m = self.m
+        N_eff = self.N - self.N_tilde
         nx = self.N * n
-        N = self.N - self.N_tilde
-        nz = nx + N * m
+        nu = self.N * self.m
+        nz = nx + nu
 
         d = Cprev.shape[0]
-        M = sp.lil_matrix(((N - 1) * d, nz))
+        
+        # Apply chance constraints only for i = 1..N_eff-1,
+        # but embed in full z = [x1..xN, u0..u_{N-1}] dimensions.
+        M = sp.lil_matrix(((N_eff - 1) * d, nz))
 
-        for i in range(1, N):
+        for i in range(1, N_eff):
             r = (i - 1) * d
             M[r:r+d, (i - 1) * n:i * n] = Cprev
             M[r:r+d, i * n:(i + 1) * n] = Ccurr
 
         M = M.tocsc()
-        rhs = np.zeros(d * (N - 1))
-        for i in range(1, N):
+        rhs = np.zeros(d * (N_eff - 1))
+        for i in range(1, N_eff):
             q = quantile(i).ppf(1.0 - epsilon)
             # reshape because we use a column vector
             rhs[d*(i-1):d*i] = (b - q).reshape(-1)

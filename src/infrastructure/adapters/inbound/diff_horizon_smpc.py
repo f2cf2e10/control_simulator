@@ -13,11 +13,14 @@ from src.infrastructure.adapters.outbound.controllers.tightened_smpc import Tigh
 
 def main():
     seed = 1
-    figs_dir = "simulations/figs/mpc/double_integrator"
+    figs_dir = "simulations/figs/smpc/multiple_horizon"
 
     n = 4
     m = 2
     h = 0.5
+    N = 7 
+    N_tilde = 2
+    T = 300
     A = np.array([[1., 0, h, 0],
                   [0, 1., 0, h],
                   [0, 0, 1., 0],
@@ -41,10 +44,7 @@ def main():
     Ccbf2 = np.array([[1.], [-1.], [0], [0]])
     bcbf2 = np.array([[1.6]])
     epsilon = 0.05
-    N = 7 
-    N_tilde = 2
-    T = 300
-    vmax = np.array([[5.], [2.]])
+    vmax = 2.
     umin = -5
     umax = 5
     Sigma = 1/12 * (2*wmax)**2 * np.eye(m)
