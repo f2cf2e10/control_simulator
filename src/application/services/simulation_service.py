@@ -32,6 +32,7 @@ class SimulationService(SimulationUseCase):
         y.append(y0)
 
         for k in range(self.N):
+            print(f"Step {k}/{self.N}")
             uk = self.controller.compute(y[k])
             u.append(uk)
 

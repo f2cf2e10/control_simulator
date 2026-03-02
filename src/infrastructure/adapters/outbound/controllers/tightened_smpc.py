@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from typing import Optional
-
 import cvxpy as cp
 import numpy as np
 import scipy.sparse as sp
 import scipy.stats as st
 import polytope as pc
 
-from src.domain.type import Matrix, MatrixOrSeq
+from src.domain.type import Matrix 
 from src.infrastructure.adapters.outbound.utils import MatrixOps
 from src.infrastructure.adapters.outbound.controllers.nominal_mpc import NominalMpc
 
@@ -52,18 +50,21 @@ class TightenedSmpc(NominalMpc):
     ):
         self.N = int(N)
         if self.N <= 0:
-            raise ValueError("N must be a positive integer")
+            raise ValueError("N must be a positive intege")
         self.N_tilde = int(N_tilde)
+        self.K = K
 
         # Convert to per-step lists (length N)
         A_list = MatrixOps.to_list(A, self.N, "A")
         B_list = MatrixOps.to_list(B, self.N, "B")
         Q_list = MatrixOps.to_list(Q, self.N, "Q")
         R_list = MatrixOps.to_list(R, self.N, "R")
-        Acl = A + B @ K
+        Acl_list = []
         GSG = G @ Sigma @ G.T
         S_list = [GSG]
         for i in range(N):
+            Acl = A_list[i] - B_list[i] @ K
+            Acl_list.append(Acl)
             S_list.append(Acl @ S_list[i] @ Acl.T + GSG)
 
         # Dimensions from step 0
@@ -80,18 +81,16 @@ class TightenedSmpc(NominalMpc):
         Ccbf = np.vstack((Ccbf1.T, Ccbf2.T))  # shape (2, n)
         bcbf = np.array([bcbf1, bcbf2])
         self._build_problem_offline(
-            N, n, m, Q_list, R_list, K, A_list, B_list, G, Ccbf, bcbf,
+            N, n, m, Q_list, R_list, K, Acl_list, B_list, G, Ccbf, bcbf,
             gamma, epsilon, umin, umax, wmin, wmax, vmax)
 
     def _build_problem_offline(self, N, n, m, Q_list, R_list, K, A_list,
                                B_list, G, Ccbf, bcbf, gamma, epsilon, umin,
                                umax, wmin, wmax, vmax):
-        Acl_list = [A_list[i] + B_list[i] @ K for i in range(self.N)]
         obj, cons = self._build_problem_params(
-            N, n, m, Q_list, R_list, Acl_list, B_list, None, None, None, None, None)
-        cons += self._build_input_tightening(Acl_list,
-                                             K, G, umin, umax, wmin, wmax)
-
+            N, n, m, Q_list, R_list, A_list, B_list, None, None, None, None, None)
+        cons += self._build_input_tightening(A_list, K, G, umin, umax, wmin, wmax)
+        
         def prob(i): return st.irwinhall(i, loc=i * wmin, scale=(wmax - wmin))
         # P{C'*x_i + b >= (1-gamma)(C'*x_{i-1}+b) | x_{i-1}} >= 1-epsilon
         cons += self._build_chance_constraint((1-gamma)
@@ -173,3 +172,8 @@ class TightenedSmpc(NominalMpc):
             # reshape because we use a column vector
             rhs[d*(i-1):d*i] = (b - q).reshape(-1)
         return [M @ self.z <= rhs]
+
+    def compute(self, y_k):
+        v0 = super().compute(y_k)
+        u0 = v0 - self.K @ y_k
+        return u0

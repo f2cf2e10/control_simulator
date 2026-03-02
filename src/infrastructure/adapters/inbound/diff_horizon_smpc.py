@@ -19,8 +19,8 @@ def main():
     m = 2
     h = 0.5
     N = 7 
-    N_tilde = 2
-    T = 300
+    N_tilde = 3
+    T = 100
     A = np.array([[1., 0, h, 0],
                   [0, 1., 0, h],
                   [0, 0, 1., 0],
@@ -37,8 +37,8 @@ def main():
     Q = 10 * np.diag([0.1, 4, 1, 1])
     R = np.eye(m)
     gamma = 0.8
-    wmax = 0.01
-    wmin = -0.01
+    wmax = 0.1
+    wmin = -0.1
     Ccbf1 = np.array([[5./9], [1.], [0], [0]])
     bcbf1 = np.array([[0.5/9]])
     Ccbf2 = np.array([[1.], [-1.], [0], [0]])
@@ -85,11 +85,6 @@ def main():
     x, y, u = result.x, result.y, result.u
 
     # --- plots ---
-    plt.figure()
-    plt.plot([yi[0, 0] for yi in y])
-    plt.title("y (measurement)")
-    plt.savefig(f"{figs_dir}/y.png")
-
     plt.figure()
     plt.plot([xi[0, 0] for xi in x])
     plt.title("x[0] (position)")
