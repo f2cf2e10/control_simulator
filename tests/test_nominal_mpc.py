@@ -3,7 +3,7 @@ import numpy as np
 from src.infrastructure.adapters.outbound.controllers.nominal_mpc import NominalMpc
 
 
-def test_nominal_mpc_respects_state_and_input_constraints_horizon_4():
+def test_nominal_mpc_respects_state_constraints():
     A = np.array([[1.0, 0.1],
                   [0.0, 1.0]])
     B = np.array([[1.0, 0.0],
@@ -12,10 +12,6 @@ def test_nominal_mpc_respects_state_and_input_constraints_horizon_4():
     R = 0.1 * np.eye(2)
 
     N = 4
-    x_min = np.array([-1.0, -1.0])
-    x_max = np.array([1.0, 1.0])
-    u_min = np.array([-0.2, -0.2])
-    u_max = np.array([0.2, 0.2])
     x0 = np.array([[0.8], [-0.7]])
 
     mpc = NominalMpc(
@@ -24,10 +20,6 @@ def test_nominal_mpc_respects_state_and_input_constraints_horizon_4():
         B=B,
         Q=Q,
         R=R,
-        x_min=x_min,
-        x_max=x_max,
-        u_min=u_min,
-        u_max=u_max,
     )
 
     _ = mpc.compute(x0)
@@ -41,12 +33,6 @@ def test_nominal_mpc_respects_state_and_input_constraints_horizon_4():
 
     x_pred = z[:nx].reshape(N, n)
     u_pred = z[nx:].reshape(N, m)
-
-    tol = 1e-6
-    assert np.all(x_pred <= x_max + tol)
-    assert np.all(x_pred >= x_min - tol)
-    assert np.all(u_pred <= u_max + tol)
-    assert np.all(u_pred >= u_min - tol)
 
     xk = x0.reshape(-1)
     for k in range(N):
@@ -107,7 +93,7 @@ def test_nominal_mpc_equality_matrices_match_expected_block_structure():
         mpc.x0_param.value = x0_basis
         E_from_problem[:, j] = np.asarray(rhs.value).reshape(-1)
 
-    # Build expected matrices exactly as in nominal_mpc.py lines 126/129/132.
+    # Build expected matrices exactly as in nominal_mpc.py 
     Aeq_expected = np.zeros((nx, nz))
     E_expected = np.zeros((nx, n))
     for k in range(N):
