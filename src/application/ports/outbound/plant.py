@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from abc import abstractmethod
-from typing import Protocol, Tuple
+from abc import ABC, abstractmethod
+from typing import Tuple
 
 from src.domain.type import Matrix
 
-class Plant(Protocol):
+class Plant(ABC):
     @abstractmethod
     def dims(self) -> Tuple[int, int, int]:
         """Return (n, m, p) for state, controller, output."""

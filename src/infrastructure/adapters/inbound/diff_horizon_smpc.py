@@ -5,10 +5,12 @@ from scipy.signal import place_poles
 
 from src.application.ports.outbound.controller_models import AncillaryControlLaw
 from src.application.services.simulation_service import SimulationService
+from src.infrastructure.adapters.outbound.controllers.mpc.constraint.chance_constraint import ChanceConstraint
+from src.infrastructure.adapters.outbound.controllers.mpc.constraint.input_tightening_constraint import InputTighteningConstraint
 from src.infrastructure.adapters.outbound.plants.linear_plant import LinearPlant
 from src.infrastructure.adapters.outbound.noise_samplers import UniformNoise, ZeroNoise
 from src.infrastructure.adapters.outbound.cost import Quadratic
-from src.infrastructure.adapters.outbound.controllers.tightened_smpc import TightenedSmpc
+from src.infrastructure.adapters.outbound.controllers.mpc.tightened_smpc import TightenedSmpc
 
 
 def main():
@@ -18,7 +20,7 @@ def main():
     n = 4
     m = 2
     h = 0.5
-    N = 7 
+    N = 7
     N_tilde = 3
     T = 100
     A = np.array([[1., 0, h, 0],
@@ -53,27 +55,74 @@ def main():
     K = place_poles(A, B, poles)
     K = K.gain_matrix
     ancillary_law = AncillaryControlLaw(transform=lambda v0, y_k: v0 - K @ y_k)
-    quantile_provider = lambda i, eps: st.irwinhall(
+
+    def quantile_provider(i, eps): return st.irwinhall(
         i, loc=i * wmin, scale=(wmax - wmin)
     ).ppf(1.0 - eps)
+    Ccbf = np.vstack((Ccbf1.T, Ccbf2.T))
+    bcbf = np.array([bcbf1, bcbf2])
+    L1 = np.zeros((4, n))
+    L1[0, [2, 3]] = [-1, -1]
+    L1[1, [2, 3]] = [-1, 1]
+    L1[2, [2, 3]] = [1, -1]
+    L1[3, [2, 3]] = [1, 1]
+    chance_constraint_position = ChanceConstraint(
+        n=n,
+        m=m,
+        N=N,
+        N_tilde=N_tilde,
+        epsilon=epsilon,
+        Cprev=(1 - gamma) * Ccbf,
+        Ccurr=-Ccbf,
+        b=gamma * bcbf,
+        quantile_provider=quantile_provider,
+        mean_state_indices=[0, 1],
+    )
+    chance_constraint_velocity = ChanceConstraint(
+        n=n,
+        m=m,
+        N=N,
+        N_tilde=N_tilde,
+        epsilon=epsilon,
+        Cprev=np.zeros((4, n)),
+        Ccurr=L1,
+        b=np.ones((4, 1)) * vmax,
+        quantile_provider=quantile_provider,
+        mean_state_indices=[2, 3],
+    )
+    input_constraint = InputTighteningConstraint(
+        N=N,
+        A=A,
+        B=B,
+        K=K,
+        G=G,
+        umin=umin,
+        umax=umax,
+        wmin=wmin,
+        wmax=wmax,
+    )
+    constraints = [
+        input_constraint,
+        chance_constraint_position,
+        chance_constraint_velocity,
+    ]
 
     # --- plant (true system) ---
     plant = LinearPlant(
         A=A, B=B, C=C, N=T,
-        Sigma=Sigma, Gamma=None, G =G,
+        Sigma=Sigma, Gamma=None, G=G,
         process_noise_sampler=UniformNoise(wmin, wmax),
         measurement_noise_sampler=ZeroNoise(),
         seed=seed,
     )
 
     # --- controller (MPC) ---
-    mpc = TightenedSmpc(N=N, N_tilde=N_tilde, A=A, B=B, G=G, 
-                        Q=Q, R=R, K=K, Sigma=Sigma, Ccbf1=Ccbf1, 
-                        bcbf1=bcbf1, Ccbf2=Ccbf2, bcbf2=bcbf2, 
-                        gamma=gamma, epsilon=epsilon, umin=umin, 
-                        umax=umax, wmin=wmin, wmax=wmax, vmax=vmax,
+    mpc = TightenedSmpc(N=N, N_tilde=N_tilde, A=A, B=B, G=G,
+                        Q=Q, R=R, K=K, Sigma=Sigma, epsilon=epsilon,
+                        umin=umin, umax=umax, wmin=wmin, wmax=wmax,
+                        constraints=constraints,
                         ancillary_law=ancillary_law,
-                        quantile_provider=quantile_provider)
+                        )
 
     # --- Quadratic Cost ---
     qc = Quadratic(T, Q, R, Q)

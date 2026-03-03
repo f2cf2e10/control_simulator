@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-import cvxpy as cp
 import numpy as np
 import scipy.sparse as sp
 
 from src.infrastructure.adapters.outbound.utils import MatrixOps
-from src.infrastructure.adapters.outbound.controllers.mpc_core import MpcCore
+from src.infrastructure.adapters.outbound.controllers.mpc.mpc_core import MpcCore
 from src.application.ports.outbound.controller import Controller
 from src.domain.type import Matrix, MatrixOrSeq
 
@@ -86,49 +85,8 @@ class NominalMpc(Controller):
         self.z = self._core.z
         self.x0_param = self._core.x0_param
 
-    def _build_problem_offline(self, N, n, m, Q_list, R_list, A_list, B_list, Qn, x_min, x_max, u_min, u_max):
-        # Compatibility path for subclasses that still override/compose via this method.
-        obj, cons = self._build_problem_params(
-            N, n, m, Q_list, R_list, A_list, B_list, Qn, x_min, x_max, u_min, u_max)
-        self.problem_sparse = cp.Problem(obj, cons)
-
-    def _build_problem_params(self, N, n, m, Q_list, R_list, A_list, B_list, Qn, x_min, x_max, u_min, u_max) -> None:
-        # Compatibility path for subclasses: creates self.z and self.x0_param.
-        self.z, self.x0_param, obj, cons = MpcCore.build_problem_params(
-            N=N,
-            n=n,
-            m=m,
-            Q_list=Q_list,
-            R_list=R_list,
-            A_list=A_list,
-            B_list=B_list,
-            Qn=Qn,
-            x_min=x_min,
-            x_max=x_max,
-            u_min=u_min,
-            u_max=u_max,
-        )
-        return obj, cons
-
     def initialize(self) -> None:
         pass
 
     def compute(self, y_k: Matrix) -> Matrix:
-        if hasattr(self, "_core"):
-            return self._core.compute_first_input(y_k)
-
-        # Compatibility path (e.g., subclasses assembling their own problem).
-        self.x0_param.value = np.asarray(y_k, dtype=float).reshape(self.n)
-        self.problem_sparse.solve(
-            solver=cp.CLARABEL,
-            warm_start=True,
-            verbose=True,
-        )
-        if self.problem_sparse.status not in ("optimal", "optimal_inaccurate"):
-            raise RuntimeError(f"MPC failed: {self.problem_sparse.status}")
-        z = self.z.value
-        if z is None:
-            raise RuntimeError("Solver returned no solution.")
-        nx = self.N * self.n
-        u0 = z[nx: nx + self.m]
-        return u0.reshape(self.m, 1)
+        return self._core.compute_first_input(y_k)

@@ -7,25 +7,25 @@ from src.application.services.simulation_service import SimulationService
 from src.infrastructure.adapters.outbound.plants.linear_plant import LinearPlant
 from src.infrastructure.adapters.outbound.controllers.lqg import Lqg
 from src.infrastructure.adapters.outbound.noise_samplers import GaussianNoise
-from src.infrastructure.adapters.inbound.params import experiment1
+from src.infrastructure.adapters.inbound.params import unstable_system
 
 
 def main():
     seed = 1
     figs_dir = "simulations/figs/lqg_dre/double_integrator"
 
-    A = experiment1["A"] 
-    B = experiment1["B"] 
-    C = experiment1["C"] 
-    Q = experiment1["Q"] 
-    R = experiment1["R"] 
-    Qn = experiment1["Qn"] 
-    SigmaPlant = experiment1["SigmaPlant"] 
-    GammaPlant = experiment1["GammaPlant"] 
-    SigmaController =experiment1["SigmaController"]  
-    GammaController = experiment1["GammaController"]
-    x0_cov = experiment1["x0_cov"] 
-    x0_mean = experiment1["x0_mean"] 
+    A = unstable_system["A"] 
+    B = unstable_system["B"] 
+    C = unstable_system["C"] 
+    Q = unstable_system["Q"] 
+    R = unstable_system["R"] 
+    Qn = unstable_system["Qn"] 
+    SigmaPlant = unstable_system["SigmaPlant"] 
+    GammaPlant = unstable_system["GammaPlant"] 
+    SigmaController =unstable_system["SigmaController"]  
+    GammaController = unstable_system["GammaController"]
+    x0_cov = unstable_system["x0_cov"] 
+    x0_mean = unstable_system["x0_mean"] 
 
 
     N = 50

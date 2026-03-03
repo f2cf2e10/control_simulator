@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.infrastructure.adapters.outbound.controllers.nominal_mpc import NominalMpc
+from src.infrastructure.adapters.outbound.controllers.mpc.nominal_mpc import NominalMpc
 
 
 def test_nominal_mpc_respects_state_dynamics():

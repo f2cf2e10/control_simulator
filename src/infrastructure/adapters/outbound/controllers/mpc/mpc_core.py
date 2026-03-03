@@ -105,16 +105,19 @@ class MpcCore:
 
         if x_min is not None:
             Gx = sp.eye(nx, format="csc")
-            G_blocks.append(Gx)
+            Znu = sp.csc_matrix((nx, nu))
+            G_x_pos = sp.hstack([Gx, Znu], format="csc")
+            G_x_neg = sp.hstack([-Gx, Znu], format="csc")
+            G_blocks.append(G_x_pos)
             h_blocks.append(np.tile(x_max, N))
-            G_blocks.append(-Gx)
+            G_blocks.append(G_x_neg)
             h_blocks.append(-np.tile(x_min, N))
 
         if u_min is not None:
             Gu = sp.eye(nu, format="csc")
-            Znx = sp.csc_matrix((nx, nx))
-            G_u_pos = sp.block_diag([Znx, Gu], format="csc")
-            G_u_neg = sp.block_diag([Znx, -Gu], format="csc")
+            Znxu = sp.csc_matrix((nu, nx))
+            G_u_pos = sp.hstack([Znxu, Gu], format="csc")
+            G_u_neg = sp.hstack([Znxu, -Gu], format="csc")
             G_blocks.append(G_u_pos)
             h_blocks.append(np.tile(u_max, N))
             G_blocks.append(G_u_neg)

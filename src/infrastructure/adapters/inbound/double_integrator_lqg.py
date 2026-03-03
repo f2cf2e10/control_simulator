@@ -6,24 +6,24 @@ from src.application.services.simulation_service import SimulationService
 from src.infrastructure.adapters.outbound.plants.linear_plant import LinearPlant
 from src.infrastructure.adapters.outbound.controllers.lqg import Lqg
 from src.infrastructure.adapters.outbound.noise_samplers import GaussianNoise
-from src.infrastructure.adapters.inbound.params import experiment1
+from src.infrastructure.adapters.inbound.params import marginally_stable_system, unstable_system
 
 def main():
     seed = 1
     figs_dir = "simulations/figs/lqg/double_integrator"
 
-    A = experiment1["A"] 
-    B = experiment1["B"] 
-    C = experiment1["C"] 
-    Q = experiment1["Q"] 
-    R = experiment1["R"] 
-    Qn = experiment1["Qn"] 
-    SigmaPlant = experiment1["SigmaPlant"] 
-    GammaPlant = experiment1["GammaPlant"] 
-    SigmaController =experiment1["SigmaController"]  
-    GammaController = experiment1["GammaController"]
-    x0_cov = experiment1["x0_cov"] 
-    x0_mean = experiment1["x0_mean"] 
+    A = marginally_stable_system["A"] 
+    B = marginally_stable_system["B"] 
+    C = marginally_stable_system["C"] 
+    Q = marginally_stable_system["Q"] 
+    R = marginally_stable_system["R"] 
+    Qn = marginally_stable_system["Qn"] 
+    SigmaPlant = marginally_stable_system["SigmaPlant"] 
+    GammaPlant = marginally_stable_system["GammaPlant"] 
+    SigmaController =marginally_stable_system["SigmaController"]  
+    GammaController = marginally_stable_system["GammaController"]
+    x0_cov = marginally_stable_system["x0_cov"] 
+    x0_mean = marginally_stable_system["x0_mean"] 
 
     N = 50
 
