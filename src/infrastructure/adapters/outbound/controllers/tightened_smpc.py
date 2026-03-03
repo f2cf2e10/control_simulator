@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Callable, Optional, Sequence, Tuple
 
 import cvxpy as cp
@@ -10,19 +9,13 @@ import scipy.sparse as sp
 import scipy.stats as st
 
 from src.application.ports.outbound.controller import Controller
+from src.application.ports.outbound.controller_models import (
+    AncillaryControlLaw,
+    ChanceConstraintSpec,
+)
 from src.domain.type import Matrix
 from src.infrastructure.adapters.outbound.controllers.mpc_core import MpcCore
 from src.infrastructure.adapters.outbound.utils import MatrixOps
-
-
-@dataclass
-class ChanceConstraintSpec:
-    Cprev: Matrix
-    Ccurr: Matrix
-    b: Matrix
-    mean_selector: Optional[Callable[[cp.Expression], cp.Expression]] = None
-    step_start: int = 1
-    step_stop: Optional[int] = None  # exclusive
 
 
 class TightenedSmpc(Controller):
@@ -51,12 +44,16 @@ class TightenedSmpc(Controller):
         chance_specs: Optional[Sequence[ChanceConstraintSpec]] = None,
         quantile_provider: Optional[Callable[[int, float], Matrix]] = None,
         velocity_state_indices: Optional[Tuple[int, int]] = None,
+        ancillary_law: Optional[AncillaryControlLaw] = None,
     ):
         self.N = int(N)
         if self.N <= 0:
             raise ValueError("N must be a positive integer")
         self.N_tilde = int(N_tilde)
         self.K = K
+        self.ancillary_law = ancillary_law or AncillaryControlLaw(
+            transform=lambda v0, y_k: v0 - self.K @ y_k
+        )
 
         A_list = MatrixOps.to_list(A, self.N, "A")
         B_list = MatrixOps.to_list(B, self.N, "B")
@@ -309,4 +306,5 @@ class TightenedSmpc(Controller):
             raise RuntimeError("Solver returned no solution.")
         nx = self.N * self.n
         v0 = z[nx:nx + self.m].reshape(self.m, 1)
-        return v0 - self.K @ y_k
+        y_col = np.asarray(y_k, dtype=float).reshape(self.n, 1)
+        return self.ancillary_law(v0, y_col)
