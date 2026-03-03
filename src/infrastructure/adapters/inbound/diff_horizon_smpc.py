@@ -1,11 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy.stats as st
 from scipy.signal import place_poles
 
-from src.infrastructure.adapters.outbound.controllers.nominal_mpc import NominalMpc
+from src.application.ports.outbound.controller_models import AncillaryControlLaw
 from src.application.services.simulation_service import SimulationService
 from src.infrastructure.adapters.outbound.plants.linear_plant import LinearPlant
-from src.infrastructure.adapters.outbound.controllers.lqg import Lqg
 from src.infrastructure.adapters.outbound.noise_samplers import UniformNoise, ZeroNoise
 from src.infrastructure.adapters.outbound.cost import Quadratic
 from src.infrastructure.adapters.outbound.controllers.tightened_smpc import TightenedSmpc
@@ -52,6 +52,10 @@ def main():
     poles = np.array([0.3, 0.4, 0.25, 0.35])
     K = place_poles(A, B, poles)
     K = K.gain_matrix
+    ancillary_law = AncillaryControlLaw(transform=lambda v0, y_k: v0 - K @ y_k)
+    quantile_provider = lambda i, eps: st.irwinhall(
+        i, loc=i * wmin, scale=(wmax - wmin)
+    ).ppf(1.0 - eps)
 
     # --- plant (true system) ---
     plant = LinearPlant(
@@ -67,7 +71,9 @@ def main():
                         Q=Q, R=R, K=K, Sigma=Sigma, Ccbf1=Ccbf1, 
                         bcbf1=bcbf1, Ccbf2=Ccbf2, bcbf2=bcbf2, 
                         gamma=gamma, epsilon=epsilon, umin=umin, 
-                        umax=umax, wmin=wmin, wmax=wmax, vmax=vmax)
+                        umax=umax, wmin=wmin, wmax=wmax, vmax=vmax,
+                        ancillary_law=ancillary_law,
+                        quantile_provider=quantile_provider)
 
     # --- Quadratic Cost ---
     qc = Quadratic(T, Q, R, Q)
