@@ -1,16 +1,62 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import scipy.stats as st
 from scipy.signal import place_poles
 
-from src.application.ports.outbound.controller_models import AncillaryControlLaw
 from src.application.services.simulation_service import SimulationService
-from src.infrastructure.adapters.outbound.controllers.mpc.constraint.chance_constraint import ChanceConstraint
+from src.infrastructure.adapters.outbound.controllers.mpc.constraint.chance_constraint import ChanceConstraintNew
 from src.infrastructure.adapters.outbound.controllers.mpc.constraint.input_tightening_constraint import InputTighteningConstraint
+from src.infrastructure.adapters.outbound.controllers.mpc.constraint.uniform_sum_quantile import (
+    quantile_sum_uniform_symmetric,
+)
 from src.infrastructure.adapters.outbound.plants.linear_plant import LinearPlant
 from src.infrastructure.adapters.outbound.noise_samplers import UniformNoise, ZeroNoise
 from src.infrastructure.adapters.outbound.cost import Quadratic
 from src.infrastructure.adapters.outbound.controllers.mpc.tightened_smpc import TightenedTubeSmpc
+
+
+def _chain_quantiles(Acl: np.ndarray, Bw: np.ndarray, C: np.ndarray, gamma: float, epsilon: float, a: float, p: int) -> np.ndarray:
+    n = int(Acl.shape[0])
+    d = int(C.shape[0])
+    g_mat = (1.0 - gamma) * np.eye(n) - Acl
+    q = np.zeros((p, d), dtype=float)
+
+    for i in range(1, p + 1):
+        for j in range(d):
+            c = C[j:j + 1, :]
+            coeffs = []
+            if i > 1:
+                for t in range(i - 1):
+                    power = i - 2 - t
+                    a_pow = np.linalg.matrix_power(Acl, power)
+                    coeffs.extend((c @ a_pow @ g_mat @ Bw).reshape(-1).tolist())
+            coeffs.extend((-(c @ Bw)).reshape(-1).tolist())
+            q[i - 1, j] = quantile_sum_uniform_symmetric(1.0 - epsilon, a, np.asarray(coeffs))
+    return q
+
+
+def _velocity_quantiles(Acl: np.ndarray, Bw: np.ndarray, epsilon: float, a: float, p: int) -> np.ndarray:
+    n = int(Acl.shape[0])
+    e_vel = np.zeros((2, n))
+    e_vel[0, 2] = 1.0
+    e_vel[1, 3] = 1.0
+    s_signs = np.array([[1.0, 1.0],
+                        [1.0, -1.0],
+                        [-1.0, 1.0],
+                        [-1.0, -1.0]])
+
+    q = np.zeros((p, 4), dtype=float)
+    eps_face = epsilon / 4.0
+    for i in range(1, p + 1):
+        for face in range(4):
+            s = s_signs[face:face + 1, :].T
+            g = e_vel.T @ s
+            coeffs = []
+            for t in range(i):
+                power = i - 1 - t
+                a_pow = np.linalg.matrix_power(Acl, power)
+                coeffs.extend((g.T @ a_pow @ Bw).reshape(-1).tolist())
+            q[i - 1, face] = quantile_sum_uniform_symmetric(1.0 - eps_face, a, np.asarray(coeffs))
+    return q
 
 
 def main():
@@ -54,19 +100,26 @@ def main():
     poles = np.array([0.3, 0.4, 0.25, 0.35])
     K = place_poles(A, B, poles)
     K = K.gain_matrix
-    ancillary_law = AncillaryControlLaw(transform=lambda v0, y_k: v0 - K @ y_k)
+    Acl = A - B @ K
 
-    def quantile_provider(i, eps): return st.irwinhall(
-        i, loc=i * wmin, scale=(wmax - wmin)
-    ).ppf(1.0 - eps)
     Ccbf = np.vstack((Ccbf1.T, Ccbf2.T))
-    bcbf = np.array([bcbf1, bcbf2])
+    bcbf = np.vstack((bcbf1, bcbf2))
+    N_eff = N - N_tilde
+    q_chain = _chain_quantiles(Acl=Acl, Bw=G, C=Ccbf, gamma=gamma, epsilon=epsilon, a=wmax, p=N_eff)
+    q_velocity = _velocity_quantiles(Acl=Acl, Bw=G, epsilon=epsilon, a=wmax, p=N_eff)
+
+    def quantile_provider_chain(i, _eps):
+        return q_chain[i - 1, :]
+
+    def quantile_provider_velocity(i, _eps):
+        return q_velocity[i - 1, :]
+
     L1 = np.zeros((4, n))
-    L1[0, [2, 3]] = [-1, -1]
-    L1[1, [2, 3]] = [-1, 1]
-    L1[2, [2, 3]] = [1, -1]
-    L1[3, [2, 3]] = [1, 1]
-    chance_constraint_position = ChanceConstraint(
+    L1[0, [2, 3]] = [1, 1]
+    L1[1, [2, 3]] = [1, -1]
+    L1[2, [2, 3]] = [-1, 1]
+    L1[3, [2, 3]] = [-1, -1]
+    chance_constraint_position = ChanceConstraintNew(
         n=n,
         m=m,
         N=N,
@@ -75,10 +128,10 @@ def main():
         Cprev=(1 - gamma) * Ccbf,
         Ccurr=-Ccbf,
         b=gamma * bcbf,
-        quantile_provider=quantile_provider,
+        quantile_provider=quantile_provider_chain,
         mean_state_indices=None,
     )
-    chance_constraint_velocity = ChanceConstraint(
+    chance_constraint_velocity = ChanceConstraintNew(
         n=n,
         m=m,
         N=N,
@@ -87,7 +140,7 @@ def main():
         Cprev=np.zeros((4, n)),
         Ccurr=L1,
         b=np.ones((4, 1)) * vmax,
-        quantile_provider=quantile_provider,
+        quantile_provider=quantile_provider_velocity,
         mean_state_indices=None,
     )
     input_constraint = InputTighteningConstraint(
@@ -111,7 +164,8 @@ def main():
     plant = LinearPlant(
         A=A, B=B, C=C, N=T,
         Sigma=Sigma, Gamma=None, G=G,
-        process_noise_sampler=UniformNoise(wmin, wmax),
+        # Uniform(-sqrt(3), sqrt(3)) has unit variance.
+        process_noise_sampler=UniformNoise(-np.sqrt(3.0), np.sqrt(3.0)),
         measurement_noise_sampler=ZeroNoise(),
         seed=seed,
     )

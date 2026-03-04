@@ -10,7 +10,7 @@ from src.application.ports.outbound.constraint import Constraint
 from src.domain.type import Matrix
 
 
-class ChanceConstraint(Constraint):
+class ChanceConstraintNew(Constraint):
     def __init__(
         self,
         n: int,
