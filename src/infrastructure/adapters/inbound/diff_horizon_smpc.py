@@ -10,7 +10,7 @@ from src.infrastructure.adapters.outbound.controllers.mpc.constraint.input_tight
 from src.infrastructure.adapters.outbound.plants.linear_plant import LinearPlant
 from src.infrastructure.adapters.outbound.noise_samplers import UniformNoise, ZeroNoise
 from src.infrastructure.adapters.outbound.cost import Quadratic
-from src.infrastructure.adapters.outbound.controllers.mpc.tightened_smpc import TightenedSmpc
+from src.infrastructure.adapters.outbound.controllers.mpc.tightened_smpc import TightenedTubeSmpc
 
 
 def main():
@@ -76,7 +76,7 @@ def main():
         Ccurr=-Ccbf,
         b=gamma * bcbf,
         quantile_provider=quantile_provider,
-        mean_state_indices=[0, 1],
+        mean_state_indices=None,
     )
     chance_constraint_velocity = ChanceConstraint(
         n=n,
@@ -88,7 +88,7 @@ def main():
         Ccurr=L1,
         b=np.ones((4, 1)) * vmax,
         quantile_provider=quantile_provider,
-        mean_state_indices=[2, 3],
+        mean_state_indices=None,
     )
     input_constraint = InputTighteningConstraint(
         N=N,
@@ -117,11 +117,11 @@ def main():
     )
 
     # --- controller (MPC) ---
-    mpc = TightenedSmpc(N=N, N_tilde=N_tilde, A=A, B=B, G=G,
+    mpc = TightenedTubeSmpc(N=N, N_tilde=N_tilde, A=A, B=B, G=G,
                         Q=Q, R=R, K=K, Sigma=Sigma, epsilon=epsilon,
                         umin=umin, umax=umax, wmin=wmin, wmax=wmax,
                         constraints=constraints,
-                        ancillary_law=ancillary_law,
+                        #ancillary_law=ancillary_law,
                         )
 
     # --- Quadratic Cost ---

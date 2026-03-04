@@ -40,6 +40,20 @@ class ChanceConstraint(Constraint):
         self.step_stop = step_stop
 
     def build(self, z, x0_param):
+        # P(C x_{i+1} + b > (1-\gamma)*(C x_{i} + b)  | x_{i}) >= 1-epsilon
+        # x_{i} = z_{i} + e_{i}
+        # P(C (z_{i+1} + e_{i+1}) + b > (1-\gamma) (C (z_{i} + e_{i}) + b)  | z_{i}, e_{i}) >= 1-epsilon
+        # P(C (z_{i+1} + e_{i+1}) > (1-\gamma) C (z_{i} + e_{i})  -\gamma b)  | z_{i}, e_{i}) >= 1-epsilon
+        # P(C e_{i+1} > -C z_{i+1} + (1-\gamma) C (z_{i} + e_{i})  -\gamma b)  | z_{i}, e_{i}) >= 1-epsilon
+        # P(C e_{i+1} > -C (A z_{i} + B v_{i}) + (1-\gamma) C (z_{i} + e_{i})  -\gamma b)  | z_{i}, e_{i}) >= 1-epsilon
+        # P(C (Acl e_{i} + G W) > -C (A z_{i} + B v_{i}) + (1-\gamma) C (z_{i} + e_{i})  -\gamma b)  | z_{i}, e_{i}) >= 1-epsilon
+        # P(C G W > -C (A z_{i} + B v_{i} + Acl e_{i}) + (1-\gamma) C (z_{i} + e_{i})  -\gamma b)  | z_{i}, e_{i}) >= 1-epsilon
+        # P(C G W > -C (A z_{i} + B v_{i} + Acl e_{i}) + (1-\gamma) C (z_{i} + e_{i})  -\gamma b) ) >= 1-epsilon
+        # P(C G W > -C (z_{i+1} + Acl e_{i}) + (1-\gamma) C (z_{i} + e_{i})  -\gamma b) ) >= 1-epsilon
+        # q = P_{CGW}^-1(1-\epsilon)
+        # -C (z_{i+1} + Acl e_{i}) + (1-\gamma) C (z_{i} + e_{i})  -\gamma b) > q
+        # C (z_{i+1} + Acl e_{i}) - (1-\gamma) C (z_{i} + e_{i}) + \gamma b  <  q 
+        # C z_{i+1} - (1-\gamma) C z_{i}   <  q  - C Acl e_{i} + (1-\gamma) C e_{i} - \gamma b 
         constraints = []
         N_eff = self.N - self.N_tilde
         nx = self.N * self.n

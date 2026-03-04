@@ -6,16 +6,15 @@ import cvxpy as cp
 import numpy as np
 import scipy.sparse as sp
 
+from src.domain.type import Matrix
 from src.application.ports.outbound.constraint import Constraint
 from src.application.ports.outbound.controller import Controller
 from src.application.ports.outbound.controller_models import AncillaryControlLaw
-from src.domain.type import Matrix
-from src.infrastructure.adapters.outbound.controllers.mpc.constraint.input_tightening_constraint import InputTighteningConstraint
 from src.infrastructure.adapters.outbound.controllers.mpc.mpc_core import MpcCore
 from src.infrastructure.adapters.outbound.utils import MatrixOps
 
 
-class TightenedSmpc(Controller):
+class TightenedTubeSmpc(Controller):
     def __init__(
         self,
         N: int,
@@ -45,9 +44,7 @@ class TightenedSmpc(Controller):
         self.umax = umax
         self.wmin = wmin
         self.wmax = wmax
-        self.ancillary_law = ancillary_law or AncillaryControlLaw(
-            transform=lambda v0, y_k: v0 - self.K @ y_k
-        )
+        self.ancillary_law = ancillary_law 
 
         A_list = MatrixOps.to_list(A, self.N, "A")
         B_list = MatrixOps.to_list(B, self.N, "B")
@@ -65,31 +62,7 @@ class TightenedSmpc(Controller):
         m = int(B0.shape[1])
         self.n, self.m = n, m
         self.constraints = constraints
-        # Kept for API compatibility with existing constructor.
-        _ = Sigma
 
-        self._build_problem_offline(
-            N=N,
-            n=n,
-            m=m,
-            Q_list=Q_list,
-            R_list=R_list,
-            A_list=Acl_list,
-            B_list=B_list,
-            epsilon=epsilon,
-        )
-
-    def _build_problem_offline(
-        self,
-        N,
-        n,
-        m,
-        Q_list,
-        R_list,
-        A_list,
-        B_list,
-        epsilon,
-    ):
         self.z, self.x0_param, obj, cons = MpcCore.build_problem_params(
             N=N,
             n=n,
@@ -104,8 +77,8 @@ class TightenedSmpc(Controller):
             u_min=None,
             u_max=None,
         )
-        for strategy in self.constraints:
-            cons += strategy.build(self.z, self.x0_param)
+        for constraint in self.constraints:
+            cons += constraint.build(self.z, self.x0_param)
 
         self.problem_sparse = cp.Problem(obj, cons)
 
@@ -126,5 +99,4 @@ class TightenedSmpc(Controller):
             raise RuntimeError("Solver returned no solution.")
         nx = self.N * self.n
         v0 = z[nx:nx + self.m].reshape(self.m, 1)
-        y_col = np.asarray(y_k, dtype=float).reshape(self.n, 1)
-        return self.ancillary_law(v0, y_col)
+        return self.ancillary_law(v0, y_k) if self.ancillary_law is not None else v0

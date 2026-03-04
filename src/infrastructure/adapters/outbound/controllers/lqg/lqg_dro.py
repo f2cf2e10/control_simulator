@@ -2,7 +2,7 @@ from typing import List, Tuple
 import numpy as np
 import cvxpy as cp
 from scipy.linalg import sqrtm
-from src.infrastructure.adapters.outbound.controllers.lqg import Lqg
+from src.infrastructure.adapters.outbound.controllers.lqg.lqg import Lqg
 from src.domain.type import Matrix
 from src.infrastructure.adapters.outbound.utils import MatrixOps
 
