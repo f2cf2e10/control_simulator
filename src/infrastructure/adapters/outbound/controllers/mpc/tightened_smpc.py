@@ -62,6 +62,8 @@ class TightenedTubeSmpc(Controller):
         m = int(B0.shape[1])
         self.n, self.m = n, m
         self.constraints = constraints
+        self._solve_times: list[float] = []
+        self.avg_solve_time: float = float("nan")
 
         self.z, self.x0_param, obj, cons = MpcCore.build_problem_params(
             N=N,
@@ -83,15 +85,20 @@ class TightenedTubeSmpc(Controller):
         self.problem_sparse = cp.Problem(obj, cons)
 
     def initialize(self) -> None:
-        pass
+        self._solve_times.clear()
+        self.avg_solve_time = float("nan")
 
     def compute(self, y_k):
         self.x0_param.value = np.asarray(y_k, dtype=float).reshape(self.n)
         self.problem_sparse.solve(
             solver=cp.CLARABEL,
             warm_start=True,
-            verbose=True,
+            verbose=False,
         )
+        solve_time = getattr(self.problem_sparse, "_solve_time", None)
+        if solve_time is not None:
+            self._solve_times.append(float(solve_time))
+            self.avg_solve_time = float(np.mean(self._solve_times))
         if self.problem_sparse.status not in ("optimal", "optimal_inaccurate"):
             raise RuntimeError(f"MPC failed: {self.problem_sparse.status}")
         z = self.z.value

@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 from scipy.signal import place_poles
 
 from src.infrastructure.adapters.outbound.controllers.mpc.constraint.chance_constraint import ChanceConstraintNew
@@ -10,7 +11,6 @@ from src.infrastructure.adapters.outbound.controllers.mpc.constraint.uniform_sum
 )
 from src.infrastructure.adapters.outbound.plants.linear_plant import LinearPlant
 from src.infrastructure.adapters.outbound.noise_samplers import UniformNoise, ZeroNoise
-from src.infrastructure.adapters.outbound.cost import Quadratic
 from src.infrastructure.adapters.outbound.controllers.mpc.tightened_smpc import TightenedTubeSmpc
 
 
@@ -28,9 +28,11 @@ def _chain_quantiles(Acl: np.ndarray, Bw: np.ndarray, C: np.ndarray, gamma: floa
                 for t in range(i - 1):
                     power = i - 2 - t
                     a_pow = np.linalg.matrix_power(Acl, power)
-                    coeffs.extend((c @ a_pow @ g_mat @ Bw).reshape(-1).tolist())
+                    coeffs.extend(
+                        (c @ a_pow @ g_mat @ Bw).reshape(-1).tolist())
             coeffs.extend((-(c @ Bw)).reshape(-1).tolist())
-            q[i - 1, j] = quantile_sum_uniform_symmetric(1.0 - epsilon, a, np.asarray(coeffs))
+            q[i - 1, j] = quantile_sum_uniform_symmetric(
+                1.0 - epsilon, a, np.asarray(coeffs))
     return q
 
 
@@ -55,7 +57,8 @@ def _velocity_quantiles(Acl: np.ndarray, Bw: np.ndarray, epsilon: float, a: floa
                 power = i - 1 - t
                 a_pow = np.linalg.matrix_power(Acl, power)
                 coeffs.extend((g.T @ a_pow @ Bw).reshape(-1).tolist())
-            q[i - 1, face] = quantile_sum_uniform_symmetric(1.0 - eps_face, a, np.asarray(coeffs))
+            q[i - 1, face] = quantile_sum_uniform_symmetric(
+                1.0 - eps_face, a, np.asarray(coeffs))
     return q
 
 
@@ -97,7 +100,8 @@ def _alpha_metrics_from_solution(
 
     krk = K.T @ R @ K
     Ld = np.array(
-        [float(np.trace(Q @ sige_seq[k]) + np.trace(krk @ sige_seq[k])) for k in range(H)],
+        [float(np.trace(Q @ sige_seq[k]) + np.trace(krk @ sige_seq[k]))
+         for k in range(H)],
         dtype=float,
     )
     dcost = float(np.sum(Ld))
@@ -139,16 +143,15 @@ def _alpha_metrics_from_solution(
 
 
 def main():
-    seed = 171
     figs_dir = "simulations/figs/smpc/multiple_horizon"
     os.makedirs(figs_dir, exist_ok=True)
 
     n = 4
     m = 2
     h = 0.5
-    N = 7
-    N_tilde = 3
+    N = 11
     T = 100
+    Npaths = 100
     A = np.array([[1., 0, h, 0],
                   [0, 1., 0, h],
                   [0, 0, 1., 0],
@@ -165,8 +168,8 @@ def main():
     Q = 10 * np.diag([0.1, 4, 1, 1])
     R = np.eye(m)
     gamma = 0.8
-    wmax = 0.005
-    wmin = -0.005
+    wmax = 0.01
+    wmin = -wmax
     Ccbf1 = np.array([[5./9], [1.], [0], [0]])
     bcbf1 = np.array([[0.5/9]])
     Ccbf2 = np.array([[1.], [-1.], [0], [0]])
@@ -184,157 +187,195 @@ def main():
 
     Ccbf = np.vstack((Ccbf1.T, Ccbf2.T))
     bcbf = np.vstack((bcbf1, bcbf2))
-    N_eff = N - N_tilde
-    q_chain = _chain_quantiles(Acl=Acl, Bw=G, C=Ccbf, gamma=gamma, epsilon=epsilon, a=wmax, p=N_eff)
-    q_velocity = _velocity_quantiles(Acl=Acl, Bw=G, epsilon=epsilon, a=wmax, p=N_eff)
 
-    def quantile_provider_chain(i, _eps):
-        return q_chain[i - 1, :]
-
-    def quantile_provider_velocity(i, _eps):
-        return q_velocity[i - 1, :]
+    seed = 171
+    N_tildes = [6, 5, 4, 3, 2]
+    Ntrials = 500
+    trial_seeds = [seed + i for i in range(Ntrials)]
+    sige_seq = _precompute_error_covariances(Acl=Acl, Bw=G, Sigma_w=Sigma, H=N)
 
     L1 = np.zeros((4, n))
     L1[0, [2, 3]] = [1, 1]
     L1[1, [2, 3]] = [1, -1]
     L1[2, [2, 3]] = [-1, 1]
     L1[3, [2, 3]] = [-1, -1]
-    chance_constraint_position = ChanceConstraintNew(
-        n=n,
-        m=m,
-        N=N,
-        N_tilde=N_tilde,
-        epsilon=epsilon,
-        Cprev=(1 - gamma) * Ccbf,
-        Ccurr=-Ccbf,
-        b=gamma * bcbf,
-        quantile_provider=quantile_provider_chain,
-        mean_state_indices=None,
-    )
-    chance_constraint_velocity = ChanceConstraintNew(
-        n=n,
-        m=m,
-        N=N,
-        N_tilde=N_tilde,
-        epsilon=epsilon,
-        Cprev=np.zeros((4, n)),
-        Ccurr=L1,
-        b=np.ones((4, 1)) * vmax,
-        quantile_provider=quantile_provider_velocity,
-        mean_state_indices=None,
-    )
-    input_constraint = InputTighteningConstraint(
-        N=N,
-        A=A,
-        B=B,
-        K=K,
-        G=G,
-        umin=umin,
-        umax=umax,
-        wmin=wmin,
-        wmax=wmax,
-    )
-    constraints = [
-        input_constraint,
-        chance_constraint_position,
-        chance_constraint_velocity,
-    ]
 
-    # --- plant (true system) ---
-    plant = LinearPlant(
-        A=A, B=B, C=C, N=T,
-        Sigma=Sigma, Gamma=None, G=G,
-        # Uniform(-sqrt(3), sqrt(3)) has unit variance.
-        process_noise_sampler=UniformNoise(-np.sqrt(3.0), np.sqrt(3.0)),
-        measurement_noise_sampler=ZeroNoise(),
-        seed=seed,
-    )
+    seed_metrics: dict[int, dict[int, dict[str, float | int]]] = {
+        trial_seed: {} for trial_seed in trial_seeds
+    }
 
-    # --- controller (MPC) ---
-    mpc = TightenedTubeSmpc(N=N, N_tilde=N_tilde, A=A, B=B, G=G,
-                        Q=Q, R=R, K=K, Sigma=Sigma, epsilon=epsilon,
-                        umin=umin, umax=umax, wmin=wmin, wmax=wmax,
-                        constraints=constraints,
-                        #ancillary_law=ancillary_law,
-                        )
+    for N_tilde in N_tildes:
+        N_eff = N - N_tilde
+        q_chain = _chain_quantiles(
+            Acl=Acl, Bw=G, C=Ccbf, gamma=gamma, epsilon=epsilon, a=wmax, p=N_eff
+        )
+        q_velocity = _velocity_quantiles(
+            Acl=Acl, Bw=G, epsilon=epsilon, a=wmax, p=N_eff
+        )
 
-    # --- Quadratic Cost ---
-    qc = Quadratic(T, Q, R, Q)
+        def quantile_provider_chain(i, _eps, q=q_chain):
+            return q[i - 1, :]
 
-    # --- script-level simulation loop with alpha logic from centralopt.m ---
-    H = N
-    Hcbf = N_eff
-    sige_seq = _precompute_error_covariances(Acl=Acl, Bw=G, Sigma_w=Sigma, H=H)
+        def quantile_provider_velocity(i, _eps, q=q_velocity):
+            return q[i - 1, :]
 
-    x = []
-    y = []
-    u = []
-    alpha_hist = []
-    sig1_hist = []
-    sig2_hist = []
-    delta_hist = []
-    dcost_hist = []
-
-    mpc.initialize()
-
-    x0_state = plant.set_initial_state(x0)
-    x.append(x0_state)
-    y0 = plant.measure(x0_state)
-    y.append(y0)
-
-    for k in range(T):
-        uk = mpc.compute(y[k])
-        z_val = mpc.z.value
-        if z_val is None:
-            raise RuntimeError("Solver returned no primal solution for alpha computation.")
-        z_solution = np.asarray(z_val, dtype=float).reshape(-1)
-
-        alpha_k, sig1_k, sig2_k, delta_k, dcost_k = _alpha_metrics_from_solution(
-            z_solution=z_solution,
-            x_curr=np.asarray(y[k], dtype=float).reshape(-1),
+        chance_constraint_position = ChanceConstraintNew(
+            n=n,
+            m=m,
+            N=N,
+            N_tilde=N_tilde,
+            epsilon=epsilon,
+            Cprev=(1 - gamma) * Ccbf,
+            Ccurr=-Ccbf,
+            b=gamma * bcbf,
+            quantile_provider=quantile_provider_chain,
+            mean_state_indices=None,
+        )
+        chance_constraint_velocity = ChanceConstraintNew(
+            n=n,
+            m=m,
+            N=N,
+            N_tilde=N_tilde,
+            epsilon=epsilon,
+            Cprev=np.zeros((4, n)),
+            Ccurr=L1,
+            b=np.ones((4, 1)) * vmax,
+            quantile_provider=quantile_provider_velocity,
+            mean_state_indices=None,
+        )
+        input_constraint = InputTighteningConstraint(
+            N=N,
+            A=A,
+            B=B,
+            K=K,
+            G=G,
+            umin=umin,
+            umax=umax,
+            wmin=wmin,
+            wmax=wmax,
+        )
+        constraints = [
+            input_constraint,
+            chance_constraint_position,
+            chance_constraint_velocity,
+        ]
+        mpc = TightenedTubeSmpc(
+            N=N,
+            N_tilde=N_tilde,
+            A=A,
+            B=B,
+            G=G,
             Q=Q,
             R=R,
             K=K,
-            sige_seq=sige_seq,
-            H=H,
-            Hcbf=Hcbf,
+            Sigma=Sigma,
+            epsilon=epsilon,
+            umin=umin,
+            umax=umax,
+            wmin=wmin,
+            wmax=wmax,
+            constraints=constraints,
         )
-        alpha_hist.append(alpha_k)
-        sig1_hist.append(sig1_k)
-        sig2_hist.append(sig2_k)
-        delta_hist.append(delta_k)
-        dcost_hist.append(dcost_k)
 
-        u.append(uk)
-        x_next = plant.propagate(x[k], uk)
-        x.append(x_next)
-        y_next = plant.measure(x_next)
-        y.append(y_next)
+        for trial_seed in trial_seeds:
+            print(f"{N_tilde}/{trial_seed}")
+            plant = LinearPlant(
+                A=A,
+                B=B,
+                C=C,
+                N=T,
+                Sigma=Sigma,
+                Gamma=None,
+                G=G,
+                process_noise_sampler=UniformNoise(
+                    -np.sqrt(3.0), np.sqrt(3.0)),
+                measurement_noise_sampler=ZeroNoise(),
+                seed=trial_seed,
+            )
 
-    cl_cost = qc(x, u)
+            mpc.initialize()
+            alpha_hist = []
+            x_k = plant.set_initial_state(x0)
+            y_k = plant.measure(x_k)
 
-    # --- plots ---
+            for _ in range(T):
+                u_k = mpc.compute(y_k)
+                z_val = mpc.z.value
+                if z_val is None:
+                    raise RuntimeError(
+                        "Solver returned no primal solution for alpha computation."
+                    )
+                z_solution = np.asarray(z_val, dtype=float).reshape(-1)
+
+                alpha_k, _, _, _, _ = _alpha_metrics_from_solution(
+                    z_solution=z_solution,
+                    x_curr=np.asarray(y_k, dtype=float).reshape(-1),
+                    Q=Q,
+                    R=R,
+                    K=K,
+                    sige_seq=sige_seq,
+                    H=N,
+                    Hcbf=N_eff,
+                )
+                alpha_hist.append(alpha_k)
+
+                x_k = plant.propagate(x_k, u_k)
+                y_k = plant.measure(x_k)
+
+            alpha_min = float(np.min(alpha_hist))
+            avg_exec_time = float(mpc.avg_solve_time)
+            metrics: dict[str, float | int] = {
+                "seed": trial_seed,
+                "alpha_min": alpha_min,
+                "avg_execution_time": avg_exec_time,
+            }
+            seed_metrics[trial_seed][N_tilde] = metrics
+
+    valid_seeds = [
+        trial_seed
+        for trial_seed in trial_seeds
+        if all(
+            float(seed_metrics[trial_seed][N_tilde]["alpha_min"]) > 0.0
+            for N_tilde in N_tildes
+        )
+    ]
+    selected_seeds = valid_seeds[:Npaths]
+    print(f"Valid seeds across all N_tildes: {len(valid_seeds)} / {Ntrials}")
+    if len(selected_seeds) < Npaths:
+        print(
+            f"Only {len(selected_seeds)} valid paths found; requested {Npaths}.")
+
+    per_nt_alpha_min_valid: dict[int, list[float]] = {
+        N_tilde: [] for N_tilde in N_tildes}
+    simulation_results: list[dict[str, float | int]] = []
+    for path_id, trial_seed in enumerate(selected_seeds, start=1):
+        valid_row: dict[str, float | int] = {
+            "path_id": path_id, "seed": trial_seed}
+        for N_tilde in N_tildes:
+            metrics = seed_metrics[trial_seed][N_tilde]
+            per_nt_alpha_min_valid[N_tilde].append(float(metrics["alpha_min"]))
+            valid_row[f"alpha_min_Ntilde_{N_tilde}"] = metrics["alpha_min"]
+            valid_row[f"avg_execution_time_Ntilde_{N_tilde}"] = metrics["avg_execution_time"]
+        simulation_results.append(valid_row)
+
+    for N_tilde in N_tildes:
+        filtered_rows = [seed_metrics[trial_seed][N_tilde]
+                         for trial_seed in selected_seeds]
+        df_nt = pd.DataFrame(filtered_rows, columns=[
+                             "seed", "alpha_min", "avg_execution_time"])
+        df_nt.to_csv(f"{figs_dir}/N_tilde_{N_tilde}.csv", index=False)
+
+    pd.DataFrame(simulation_results).to_csv(
+        f"{figs_dir}/valid_paths_summary.csv", index=False)
+
     plt.figure()
-    plt.plot([xi[0, 0] for xi in x])
-    plt.title("x[0] (position)")
-    plt.savefig(f"{figs_dir}/x0.png")
-
-    plt.figure()
-    plt.plot([xi[1, 0] for xi in x])
-    plt.title("x[1] (velocity)")
-    plt.savefig(f"{figs_dir}/x1.png")
-
-    plt.figure()
-    plt.plot([ui[0, 0] for ui in u])
-    plt.title("u (control)")
-    plt.savefig(f"{figs_dir}/u.png")
-
-    plt.figure()
-    plt.plot(alpha_hist)
-    plt.title("alpha (centralopt logic)")
+    for N_tilde in N_tildes:
+        plt.plot(per_nt_alpha_min_valid[N_tilde], label=f"N_tilde={N_tilde}")
+    plt.axhline(0.0, color="black", linestyle="--", linewidth=1)
+    plt.title("alpha min on valid paths")
+    if selected_seeds:
+        plt.legend()
     plt.savefig(f"{figs_dir}/alpha.png")
-
-    print(f"Saved plots! cost={cl_cost:.4f}, alpha_min={np.min(alpha_hist):.6f}")
 
 
 if __name__ == "__main__":
